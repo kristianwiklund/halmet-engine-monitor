@@ -15,8 +15,8 @@
 //    D3 / GPIO 27  → Coolant temperature warning (active-low)
 //    D4 / GPIO 26  → Ignition key sense (+12 V present = ON) [optional]
 //    A1 / ADS ch0  → VP coolant temp sender voltage (parallel to gauge)
-//    A2 / ADS ch1  → Gobius Pro tank 1 OUT1
-//    A3 / ADS ch2  → Gobius Pro tank 2 OUT1
+//    A2 / ADS ch1  → Gobius Pro sensor A OUT1  ("below 3/4" threshold)
+//    A3 / ADS ch2  → Gobius Pro sensor B OUT1  ("below 1/4" threshold)
 //    1-Wire        → DS18B20 engine-room temperature probes
 //    GPIO 32       → Bilge fan relay output
 // ============================================================
@@ -66,12 +66,9 @@ static auto* gPulsesPerRev      = new NumberConfig(DEFAULT_PULSES_PER_REVOLUTION
 static auto* gEngineRunningRpm  = new NumberConfig(DEFAULT_ENGINE_RUNNING_RPM,
                                                     "/rpm/running_threshold",
                                                     "RPM threshold: engine considered running");
-static auto* gTank1CapacityL    = new NumberConfig(DEFAULT_TANK1_CAPACITY_L,
-                                                    "/tank/tank1_capacity_l",
-                                                    "Tank 1 capacity (litres)");
-static auto* gTank2CapacityL    = new NumberConfig(DEFAULT_TANK2_CAPACITY_L,
-                                                    "/tank/tank2_capacity_l",
-                                                    "Tank 2 capacity (litres)");
+static auto* gTankCapacityL     = new NumberConfig(DEFAULT_TANK_CAPACITY_L,
+                                                    "/tank/capacity_l",
+                                                    "Tank capacity (litres)");
 
 // ============================================================
 //  Engine-state debounce
@@ -280,17 +277,29 @@ void loop() {
         float   coolantC = voltageToCelsius(volts0);
         float   coolantK = coolantC + 273.15f;
 
-        // A2 — Gobius Pro tank 1 OUT1
-        int16_t raw1 = gAds.readADC_SingleEnded(1);
-        float   volts1 = gAds.computeVolts(raw1);
-        bool    tank1Reached = (volts1 < GOBIUS_THRESHOLD_VOLTAGE);
-        float   tank1Pct  = tank1Reached ? 100.0f : 0.0f;  // binary: 100% or 0%
+        // A2 — Gobius sensor A: output sinks LOW when tank is below 3/4
+        int16_t raw1     = gAds.readADC_SingleEnded(1);
+        float   volts1   = gAds.computeVolts(raw1);
+        bool    below3q  = (volts1 < GOBIUS_THRESHOLD_VOLTAGE);  // true = below 3/4
 
-        // A3 — Gobius Pro tank 2 OUT1
-        int16_t raw2 = gAds.readADC_SingleEnded(2);
-        float   volts2 = gAds.computeVolts(raw2);
-        bool    tank2Reached = (volts2 < GOBIUS_THRESHOLD_VOLTAGE);
-        float   tank2Pct  = tank2Reached ? 100.0f : 0.0f;
+        // A3 — Gobius sensor B: output sinks LOW when tank is below 1/4
+        int16_t raw2     = gAds.readADC_SingleEnded(2);
+        float   volts2   = gAds.computeVolts(raw2);
+        bool    below1q  = (volts2 < GOBIUS_THRESHOLD_VOLTAGE);  // true = below 1/4
+
+        // Combine both thresholds into a single level estimate.
+        // Note: below1q implies below3q; if hardware disagrees, trust below3q.
+        float tankLevelPct;
+        if (below1q) {
+            // Tank is below 1/4 — both sensors should be triggered
+            tankLevelPct = TANK_LEVEL_LOW_PCT;   // 12.5 %
+        } else if (below3q) {
+            // Tank is between 1/4 and 3/4 — only the 3/4 sensor is triggered
+            tankLevelPct = TANK_LEVEL_MID_PCT;   // 50.0 %
+        } else {
+            // Tank is at or above 3/4 — neither sensor triggered
+            tankLevelPct = TANK_LEVEL_HIGH_PCT;  // 87.5 %
+        }
 
         // A4 — spare (battery voltage, optional)
         // int16_t raw3 = gAds.readADC_SingleEnded(3);
@@ -311,17 +320,13 @@ void loop() {
                                           oilAlarm,
                                           tempAlarm);
 
+            // Single tank, single PGN 127505 message (instance 0).
+            // Level is derived from two Gobius threshold sensors (see above).
             N2kSenders::sendFluidLevel(gNmea2000,
                                        0,                            // tank instance 0
-                                       N2kft_Water,                  // adjust to actual fluid type
-                                       tank1Pct,
-                                       gTank1CapacityL->getValue());
-
-            N2kSenders::sendFluidLevel(gNmea2000,
-                                       1,                            // tank instance 1
-                                       N2kft_Water,
-                                       tank2Pct,
-                                       gTank2CapacityL->getValue());
+                                       N2kft_Diesel,                 // adjust to actual fluid type
+                                       tankLevelPct,
+                                       gTankCapacityL->getValue());
         }
     }
 

@@ -12,7 +12,7 @@ git config user.email "dev@halmet-project.local"
 
 git add -A
 
-git commit -m "Initial commit: HALMET Marine Engine & Tank Monitor"
+git commit -m "Initial commit: HALMET Marine Engine & Tank Monitor (platformio.ini corrected)"
 
 echo.
 echo Done. Repository initialised.

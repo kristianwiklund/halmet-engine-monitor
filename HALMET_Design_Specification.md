@@ -173,15 +173,16 @@ Use CAT5 cable (one pair per bus segment). Each sensor has a unique 64-bit ROM a
 
 ### 4.1 Framework & Libraries
 
-| Library | Purpose |
-|---|---|
-| SensESP v3 | Reactive sensor pipeline, WiFi config, OTA, Signal K connectivity |
-| NMEA2000 (ttlappalainen) | NMEA 2000 node on CAN bus |
-| NMEA2000_esp32 | ESP32 CAN driver |
-| OneWire + DallasTemperature | DS18B20 sensor chain |
-| ADS1115 / Adafruit_ADS1X15 | 16-bit ADC readings |
+| Library | PlatformIO reference | Purpose |
+|---|---|---|
+| SensESP v3 | `SignalK/SensESP @ ^3.1.0` | Reactive sensor pipeline, WiFi config, OTA, Signal K |
+| NMEA2000-library | `ttlappalainen/NMEA2000-library` | NMEA 2000 node on CAN bus |
+| NMEA2000_esp32 | GitHub URL (not in registry) | ESP32 TWAI/CAN driver |
+| OneWire | `paulstoffregen/OneWire @ ^2.3` | DS18B20 bus protocol |
+| DallasTemperature | `milesburton/DallasTemperature @ ^3.9` | DS18B20 temperature reads |
+| Adafruit ADS1X15 | `adafruit/Adafruit ADS1X15 @ ^2.5` | 16-bit ADC readings |
 
-Build system: **PlatformIO** with the `espressif32` platform.
+Build system: **PlatformIO** with the **pioarduino** platform fork (required for Arduino ESP32 Core 3.x / IDF 5.x, which SensESP v3 depends on). The official `espressif32` platform is frozen at Core 2.0.17 and is incompatible with SensESP v3.
 
 ### 4.2 NMEA 2000 PGN Strategy
 

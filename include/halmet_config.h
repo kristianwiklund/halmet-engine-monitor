@@ -36,16 +36,32 @@
 
 // ----------------------------------------------------------
 //  Tank configuration
+//
+//  One physical tank, two Gobius Pro sensors:
+//    A2 / Gobius sensor A  → "below 3/4" threshold
+//    A3 / Gobius sensor B  → "below 1/4" threshold
+//
+//  Combined level estimate sent as a single PGN 127505 message:
+//    sensor A high, sensor B high  →  tank >= 3/4  → report 87.5 %
+//    sensor A low,  sensor B high  →  1/4 <= tank < 3/4  → report 50.0 %
+//    sensor A low,  sensor B low   →  tank < 1/4  → report 12.5 %
+//
+//  (Midpoints of each band are used so that MFD bar-graphs are
+//   centred within the correct segment.)
 // ----------------------------------------------------------
 
 /// Reported capacity (litres) transmitted in PGN 127505.
-/// Configure to match the actual tank volumes.
-#define DEFAULT_TANK1_CAPACITY_L        100.0f
-#define DEFAULT_TANK2_CAPACITY_L        100.0f
+#define DEFAULT_TANK_CAPACITY_L         100.0f
 
-/// Gobius OUT1 voltage threshold (V).
-/// Below this → threshold reached (output sinking to GND).
+/// Gobius output voltage threshold (V).
+/// Below this → output is sinking to GND (threshold reached).
 #define GOBIUS_THRESHOLD_VOLTAGE        1.5f
+
+/// Estimated level percentages for each combination of sensor states.
+/// These are the midpoints of the three bands: <1/4, 1/4–3/4, >=3/4.
+#define TANK_LEVEL_LOW_PCT              12.5f   // both sensors triggered  (< 1/4)
+#define TANK_LEVEL_MID_PCT              50.0f   // only 3/4 sensor triggered (1/4–3/4)
+#define TANK_LEVEL_HIGH_PCT             87.5f   // no sensor triggered     (>= 3/4)
 
 // ----------------------------------------------------------
 //  Temperature sender (Volvo Penta / VDO-type NTC)
