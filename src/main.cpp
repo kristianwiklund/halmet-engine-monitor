@@ -31,6 +31,7 @@
 // ============================================================
 
 #include <Arduino.h>
+#include <cmath>
 
 // --- SensESP v3 ---
 #include <sensesp.h>
@@ -86,6 +87,22 @@ static bool  gTempAlarm    = false;
 static float gTankLevelPct = TANK_LEVEL_HIGH_PCT;
 
 // ============================================================
+//  ADS1115 status (file-scope so retry callback can see it)
+// ============================================================
+static bool gAdsOk = false;
+
+// ============================================================
+//  Alarm input debounce (shift-register, 4-of-5 majority vote)
+// ============================================================
+static uint8_t gOilAlarmHistory  = 0;   // bit-packed last N samples
+static uint8_t gTempAlarmHistory = 0;
+
+// ============================================================
+//  Stale data guard — coolant temperature
+// ============================================================
+static uint32_t gCoolantLastUpdateMs = 0;
+
+// ============================================================
 //  Engine-state debounce
 // ============================================================
 static bool     gEngineRunning    = false;
@@ -110,6 +127,9 @@ static const CurvePoint kTempCurve[] = { TEMP_CURVE_POINTS };
 static constexpr int kTempCurveLen = sizeof(kTempCurve) / sizeof(CurvePoint);
 
 static float voltageToCelsius(float volt) {
+    // Out-of-range voltage → sensor fault (open/shorted)
+    if (volt < COOLANT_VOLT_MIN_V || volt > COOLANT_VOLT_MAX_V) return NAN;
+
     if (volt <= kTempCurve[kTempCurveLen - 1].v) return kTempCurve[kTempCurveLen - 1].c;
     if (volt >= kTempCurve[0].v)                 return kTempCurve[0].c;
     for (int i = 0; i < kTempCurveLen - 1; i++) {
@@ -119,7 +139,7 @@ static float voltageToCelsius(float volt) {
             return kTempCurve[i + 1].c + ratio * (kTempCurve[i].c - kTempCurve[i + 1].c);
         }
     }
-    return -1.0f;
+    return NAN;
 }
 
 // ============================================================
@@ -159,16 +179,19 @@ void setup() {
     gBilgeFan.begin();
 
     // --- I2C bus ---
+    Wire.setTimeOut(100);             // 100 ms I2C timeout (bus recovery)
     Wire.begin(HALMET_PIN_SDA, HALMET_PIN_SCL);
     Wire.setClock(400000);
 
     // --- ADS1115 ADC (ADDR tied to VCC → 0x4B) ---
-    static bool gAdsOk = gAds.begin(ADS1115_I2C_ADDRESS, &Wire);
-    if (!gAdsOk) {
-        ESP_LOGE("HALMET", "ADS1115 not found at 0x4B — check I2C wiring!");
+    gAdsOk = gAds.begin(ADS1115_I2C_ADDRESS, &Wire);
+    if (gAdsOk) {
+        gAds.setGain(GAIN_ONE);           // ±4.096 V range, 0.125 mV/bit
+        gAds.setDataRate(RATE_ADS1115_8SPS);
+        ESP_LOGI("HALMET", "ADS1115 found at 0x%02X", ADS1115_I2C_ADDRESS);
+    } else {
+        ESP_LOGE("HALMET", "ADS1115 not found at 0x4B — will retry");
     }
-    gAds.setGain(GAIN_ONE);           // ±4.096 V range, 0.125 mV/bit
-    gAds.setDataRate(RATE_ADS1115_8SPS);
 
     // --- NMEA 2000 ---
     setupNmea2000();
@@ -252,7 +275,13 @@ void setup() {
         if (!gAdsOk) return;
         // A1 — VP coolant temperature sender (passive voltage)
         float volts0 = gAds.computeVolts(gAds.readADC_SingleEnded(0));
-        gCoolantK = voltageToCelsius(volts0) + 273.15f;
+        float celsius = voltageToCelsius(volts0);
+        if (std::isnan(celsius)) {
+            gCoolantK = N2kDoubleNA;        // sensor fault → MFD shows blank
+        } else {
+            gCoolantK = celsius + 273.15f;
+            gCoolantLastUpdateMs = millis(); // mark valid reading
+        }
 
         // A2 — Gobius sensor A (below 3/4 threshold)
         bool below3q = gAds.computeVolts(gAds.readADC_SingleEnded(1))
@@ -266,21 +295,44 @@ void setup() {
         else              gTankLevelPct = TANK_LEVEL_HIGH_PCT;   // 87.5 %
     });
 
-    // Alarm digital inputs (500 ms)
+    // Alarm digital inputs with debounce (500 ms)
+    // Shift-register majority vote: alarm asserts only when
+    // ALARM_DEBOUNCE_THRESHOLD of the last ALARM_DEBOUNCE_SAMPLES agree.
     event_loop()->onRepeat(INTERVAL_DIGITAL_ALARM_MS, []() {
-        gOilAlarm  = (digitalRead(HALMET_PIN_D2) == LOW);
-        gTempAlarm = (digitalRead(HALMET_PIN_D3) == LOW);
+        constexpr uint8_t mask = (1 << ALARM_DEBOUNCE_SAMPLES) - 1;
+
+        gOilAlarmHistory  = ((gOilAlarmHistory  << 1) | (digitalRead(HALMET_PIN_D2) == LOW)) & mask;
+        gTempAlarmHistory = ((gTempAlarmHistory << 1) | (digitalRead(HALMET_PIN_D3) == LOW)) & mask;
+
+        gOilAlarm  = (__builtin_popcount(gOilAlarmHistory)  >= ALARM_DEBOUNCE_THRESHOLD);
+        gTempAlarm = (__builtin_popcount(gTempAlarmHistory) >= ALARM_DEBOUNCE_THRESHOLD);
+    });
+
+    // ADS1115 I2C recovery (retry when not present)
+    event_loop()->onRepeat(INTERVAL_ADS_RETRY_MS, []() {
+        if (gAdsOk) return;
+        Wire.begin(HALMET_PIN_SDA, HALMET_PIN_SCL);
+        Wire.setClock(400000);
+        gAdsOk = gAds.begin(ADS1115_I2C_ADDRESS, &Wire);
+        if (gAdsOk) {
+            gAds.setGain(GAIN_ONE);
+            gAds.setDataRate(RATE_ADS1115_8SPS);
+            ESP_LOGI("HALMET", "ADS1115 recovered on I2C retry");
+        }
     });
 
     // N2K slow PGNs: PGN 127489 + PGN 127505 (1 s)
     event_loop()->onRepeat(1000, []() {
+        // Stale data guard: if no valid coolant reading for >5 s, send NA
+        double coolantToSend = gCoolantK;
+        if (gCoolantLastUpdateMs != 0 &&
+            (millis() - gCoolantLastUpdateMs) > STALE_DATA_TIMEOUT_MS) {
+            coolantToSend = N2kDoubleNA;
+        }
         N2kSenders::sendEngineDynamic(gNmea2000, N2K_ENGINE_INSTANCE,
-                                      gCoolantK, N2kDoubleNA,
+                                      coolantToSend, N2kDoubleNA,
                                       gOilAlarm, gTempAlarm);
-        // N2kft_Diesel may be absent in older library versions.
-        // The closest available alternative is N2kft_Oil.
-        // Upgrade the NMEA2000-library if you need N2kft_Diesel.
-        N2kSenders::sendFluidLevel(gNmea2000, 0, N2kft_Oil,
+        N2kSenders::sendFluidLevel(gNmea2000, 0, N2kft_Fuel,
                                    gTankLevelPct, gTankCapacityL->get());
     });
 

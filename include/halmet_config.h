@@ -102,6 +102,28 @@
 #define ADS1115_I2C_ADDRESS     0x4B
 
 // ----------------------------------------------------------
+//  Alarm debouncing (shift-register majority vote)
+// ----------------------------------------------------------
+#define ALARM_DEBOUNCE_SAMPLES      5
+#define ALARM_DEBOUNCE_THRESHOLD    4       // 4-of-5 = alarm asserted
+
+// ----------------------------------------------------------
+//  I2C / ADS1115 recovery
+// ----------------------------------------------------------
+#define INTERVAL_ADS_RETRY_MS       5000
+
+// ----------------------------------------------------------
+//  Coolant sensor fault detection
+// ----------------------------------------------------------
+#define COOLANT_VOLT_MIN_V          0.50f   // below = open/shorted sender
+#define COOLANT_VOLT_MAX_V          3.50f   // above = open/shorted sender
+
+// ----------------------------------------------------------
+//  Stale data guard
+// ----------------------------------------------------------
+#define STALE_DATA_TIMEOUT_MS       5000
+
+// ----------------------------------------------------------
 //  Polling intervals (ms)
 // ----------------------------------------------------------
 #define INTERVAL_ANALOG_MS              200     // A1 temp/tank reads
