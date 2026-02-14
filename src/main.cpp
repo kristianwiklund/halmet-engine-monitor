@@ -32,6 +32,7 @@
 
 #include <Arduino.h>
 #include <cmath>
+#include <esp_system.h>
 
 // --- SensESP v3 ---
 #include <sensesp.h>
@@ -77,11 +78,13 @@ static PersistingObservableValue<float>* gPurgeDurationSec = nullptr;
 static PersistingObservableValue<float>* gPulsesPerRev     = nullptr;
 static PersistingObservableValue<float>* gEngineRunningRpm = nullptr;
 static PersistingObservableValue<float>* gTankCapacityL    = nullptr;
+static PersistingObservableValue<float>* gCoolantWarnC    = nullptr;
+static PersistingObservableValue<float>* gCoolantAlarmC   = nullptr;
 
 // ============================================================
 //  Shared state (written by sensor callbacks, read by N2K senders)
 // ============================================================
-static float gCoolantK     = 273.15f;
+static double gCoolantK    = N2kDoubleNA;
 static bool  gOilAlarm     = false;
 static bool  gTempAlarm    = false;
 static float gTankLevelPct = TANK_LEVEL_HIGH_PCT;
@@ -147,6 +150,17 @@ static float voltageToCelsius(float volt) {
 // ============================================================
 static SKOutputBool* gSkFanState = nullptr;
 static SKOutputBool* gSkIgnState = nullptr;
+static SKOutputRawJson* gSkCoolantNotification = nullptr;
+
+// ============================================================
+//  Diagnostics counters
+// ============================================================
+static uint32_t gAdsFailCount = 0;
+
+// ============================================================
+//  Coolant alert state (avoid repeated notifications)
+// ============================================================
+static enum { COOLANT_NORMAL, COOLANT_WARN, COOLANT_ALARM } gCoolantAlertState = COOLANT_NORMAL;
 
 // ============================================================
 //  NMEA 2000 setup
@@ -190,6 +204,7 @@ void setup() {
         gAds.setDataRate(RATE_ADS1115_8SPS);
         ESP_LOGI("HALMET", "ADS1115 found at 0x%02X", ADS1115_I2C_ADDRESS);
     } else {
+        gAdsFailCount++;
         ESP_LOGE("HALMET", "ADS1115 not found at 0x4B — will retry");
     }
 
@@ -228,6 +243,16 @@ void setup() {
     ConfigItem(gTankCapacityL)
         ->set_title("Tank capacity (litres)");
 
+    gCoolantWarnC = new PersistingObservableValue<float>(
+        DEFAULT_COOLANT_WARN_C, "/coolant/warn_threshold_c");
+    ConfigItem(gCoolantWarnC)
+        ->set_title("Coolant warning threshold (°C)");
+
+    gCoolantAlarmC = new PersistingObservableValue<float>(
+        DEFAULT_COOLANT_ALARM_C, "/coolant/alarm_threshold_c");
+    ConfigItem(gCoolantAlarmC)
+        ->set_title("Coolant alarm threshold (°C)");
+
     // --- Signal K outputs for data with no NMEA 2000 PGN ---
     gSkFanState = new SKOutputBool("electrical.switches.bilgeFan.state", "",
                                    new SKMetadata("Bilge fan", "Bilge fan purge active"));
@@ -235,6 +260,9 @@ void setup() {
                                    new SKMetadata("Ignition key", "Ignition key present"));
     gSkFanState->set(false);
     gSkIgnState->set(false);
+
+    gSkCoolantNotification = new SKOutputRawJson(
+        "notifications.propulsion.0.coolantTemperature", "");
 
     // Relay state change callback → Signal K
     gBilgeFan.onRelayChange([](bool on) {
@@ -281,6 +309,30 @@ void setup() {
         } else {
             gCoolantK = celsius + 273.15f;
             gCoolantLastUpdateMs = millis(); // mark valid reading
+
+            // Coolant threshold alerting → Signal K notification
+            float warnC  = gCoolantWarnC  ? gCoolantWarnC->get()  : DEFAULT_COOLANT_WARN_C;
+            float alarmC = gCoolantAlarmC ? gCoolantAlarmC->get() : DEFAULT_COOLANT_ALARM_C;
+            auto  newState = COOLANT_NORMAL;
+            if (celsius >= alarmC)      newState = COOLANT_ALARM;
+            else if (celsius >= warnC)  newState = COOLANT_WARN;
+
+            if (newState != gCoolantAlertState) {
+                gCoolantAlertState = newState;
+                if (gSkCoolantNotification) {
+                    if (newState == COOLANT_NORMAL) {
+                        gSkCoolantNotification->set("null");
+                    } else {
+                        const char* state = (newState == COOLANT_ALARM) ? "alarm" : "warn";
+                        char buf[192];
+                        snprintf(buf, sizeof(buf),
+                            "{\"state\":\"%s\",\"method\":[\"visual\",\"sound\"],"
+                            "\"message\":\"Coolant %.0f°C (%s threshold)\"}",
+                            state, celsius, state);
+                        gSkCoolantNotification->set(String(buf));
+                    }
+                }
+            }
         }
 
         // A2 — Gobius sensor A (below 3/4 threshold)
@@ -318,14 +370,16 @@ void setup() {
             gAds.setGain(GAIN_ONE);
             gAds.setDataRate(RATE_ADS1115_8SPS);
             ESP_LOGI("HALMET", "ADS1115 recovered on I2C retry");
+        } else {
+            gAdsFailCount++;
         }
     });
 
     // N2K slow PGNs: PGN 127489 + PGN 127505 (1 s)
     event_loop()->onRepeat(1000, []() {
-        // Stale data guard: if no valid coolant reading for >5 s, send NA
+        // Stale data guard: send NA if no valid coolant reading ever, or >5 s stale
         double coolantToSend = gCoolantK;
-        if (gCoolantLastUpdateMs != 0 &&
+        if (gCoolantLastUpdateMs == 0 ||
             (millis() - gCoolantLastUpdateMs) > STALE_DATA_TIMEOUT_MS) {
             coolantToSend = N2kDoubleNA;
         }
@@ -345,6 +399,20 @@ void setup() {
     event_loop()->onRepeat(5000, []() {
         if (gSkFanState) gSkFanState->set(gBilgeFan.relayOn());
         if (gSkIgnState) gSkIgnState->set(digitalRead(HALMET_PIN_D4) == HIGH);
+    });
+
+    // Diagnostics heartbeat → Signal K (10 s)
+    static auto* skDiagUptime    = new SKOutputFloat("design.halmet.diagnostics.uptimeSeconds", "");
+    static auto* skDiagVersion   = new SKOutputString("design.halmet.diagnostics.firmwareVersion", "");
+    static auto* skDiagAdsFails  = new SKOutputInt("design.halmet.diagnostics.adsFailCount", "");
+    static auto* skDiagResetCode = new SKOutputInt("design.halmet.diagnostics.lastResetReason", "");
+
+    skDiagVersion->set(FW_VERSION_STR);
+
+    event_loop()->onRepeat(INTERVAL_DIAG_MS, []() {
+        skDiagUptime->set(millis() / 1000.0f);
+        skDiagAdsFails->set(static_cast<int>(gAdsFailCount));
+        skDiagResetCode->set(static_cast<int>(esp_reset_reason()));
     });
 
     // NMEA 2000 message pump (every 1 ms — must be fast)

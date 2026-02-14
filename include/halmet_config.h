@@ -119,6 +119,12 @@
 #define COOLANT_VOLT_MAX_V          3.50f   // above = open/shorted sender
 
 // ----------------------------------------------------------
+//  Coolant temperature threshold alerting
+// ----------------------------------------------------------
+#define DEFAULT_COOLANT_WARN_C      95.0f   // Signal K "warn" notification
+#define DEFAULT_COOLANT_ALARM_C     105.0f  // Signal K "alarm" notification
+
+// ----------------------------------------------------------
 //  Stale data guard
 // ----------------------------------------------------------
 #define STALE_DATA_TIMEOUT_MS       5000
@@ -131,3 +137,4 @@
 #define INTERVAL_1WIRE_MS               10000   // DS18B20 chain (slow)
 #define INTERVAL_RPM_MS                 100     // RPM counter update
 #define INTERVAL_FAN_MS                 1000    // Fan state machine tick
+#define INTERVAL_DIAG_MS                10000   // Diagnostics heartbeat
