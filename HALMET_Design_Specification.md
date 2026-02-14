@@ -308,15 +308,17 @@ All items implemented and verified on hardware (commit `8534703`).
 
 Hardware watchdog was originally Sprint 1 item 1 but deferred to Sprint 3 due to OTA bricking risk (watchdog firing mid-flash corrupts firmware).
 
-### Sprint 2 — High-Value Features (NEXT)
+### Sprint 2 — High-Value Features (COMPLETE)
 
-| # | Feature | Description | Complexity |
-|---|---------|-------------|------------|
-| 6 | Fix cold-boot coolant sentinel | Initialise `gCoolantK = N2kDoubleNA` so MFD shows blank (not 0°C) when ADS1115 is absent at boot. Stale guard currently skips when `gCoolantLastUpdateMs == 0` | Trivial |
-| 7 | Temperature threshold alerting | Use precise analog coolant temp from A1 to trigger Signal K notification *before* the binary alarm switch on D3 trips. Configurable warning (95°C) and alarm (105°C) thresholds via web UI | Medium |
-| 8 | Diagnostics heartbeat | Publish uptime, firmware version, ADS fail count, and `esp_reset_reason()` to Signal K every 10 s. Define `FW_VERSION_STR` as a build flag for reuse in Sprint 3 item 10 | Low |
+All items implemented and verified on hardware (commit `0af9730`).
 
-### Sprint 3 — OTA & Robustness
+| # | Feature | Status |
+|---|---------|--------|
+| 6 | Fix cold-boot coolant sentinel (`gCoolantK` init to `N2kDoubleNA`, stale guard fires when no valid read ever) | Done |
+| 7 | Temperature threshold alerting (configurable warn 95°C / alarm 105°C → Signal K notifications) | Done |
+| 8 | Diagnostics heartbeat (uptime, firmware version, ADS fail count, reset reason → Signal K every 10 s) | Done |
+
+### Sprint 3 — OTA & Robustness (NEXT)
 
 | # | Feature | Description | Complexity |
 |---|---------|-------------|------------|
