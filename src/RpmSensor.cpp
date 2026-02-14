@@ -12,7 +12,7 @@ volatile uint32_t RpmSensor::_lastPulseTime = 0;
 //  ISR  — runs in IRAM, counts every falling edge
 // ----------------------------------------------------------
 void IRAM_ATTR RpmSensor::isrHandler() {
-    _pulseCount++;
+    _pulseCount = _pulseCount + 1;  // avoid deprecated volatile++ in C++20
     _lastPulseTime = micros();
 }
 

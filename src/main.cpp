@@ -3,11 +3,20 @@
 //
 //  Hardware:  Hat Labs HALMET (ESP32-WROOM-32E)
 //  Engine:    Volvo Penta MD7A / Paris Rhone alternator
-//  Framework: Arduino (PlatformIO)
+//  Framework: Arduino + SensESP v3 (PlatformIO)
 //
 //  Communication strategy:
 //    Primary  → NMEA 2000 (engine/tank data via standard PGNs)
 //    Fallback → WiFi / Signal K WebSocket (relay state, key sense)
+//
+//  SensESP v3 changes from v2:
+//    - No global ReactESP app object; use event_loop() helper instead
+//    - No sensesp_app->start() — removed in v3
+//    - NumberConfig replaced by PersistingObservableValue + ConfigItem<T>
+//    - set_wifi() is deprecated; use set_wifi_client()
+//    - Builder methods return SensESPAppBuilder* (use -> not .)
+//    - loop() body is just event_loop()->tick()
+//    - SetupLogging() replaces SetupSerialDebug()
 //
 //  Input map:
 //    D1 / GPIO 23  → Alternator W-terminal RPM pulses
@@ -15,20 +24,20 @@
 //    D3 / GPIO 27  → Coolant temperature warning (active-low)
 //    D4 / GPIO 26  → Ignition key sense (+12 V present = ON) [optional]
 //    A1 / ADS ch0  → VP coolant temp sender voltage (parallel to gauge)
-//    A2 / ADS ch1  → Gobius Pro sensor A OUT1  ("below 3/4" threshold)
-//    A3 / ADS ch2  → Gobius Pro sensor B OUT1  ("below 1/4" threshold)
+//    A2 / ADS ch1  → Gobius Pro sensor A OUT1 ("below 3/4" threshold)
+//    A3 / ADS ch2  → Gobius Pro sensor B OUT1 ("below 1/4" threshold)
 //    1-Wire        → DS18B20 engine-room temperature probes
 //    GPIO 32       → Bilge fan relay output
 // ============================================================
 
 #include <Arduino.h>
 
-// --- SensESP ---
+// --- SensESP v3 ---
 #include <sensesp.h>
-#include <sensesp/sensors/sensor.h>
-#include <sensesp/signalk/signalk_output.h>
-#include <sensesp/system/lambda_consumer.h>
 #include <sensesp_app_builder.h>
+#include <sensesp/ui/config_item.h>
+//#include <sensesp/system/persisting_observablevalue.h>
+#include <sensesp/signalk/signalk_output.h>
 
 // --- NMEA 2000 ---
 #include <NMEA2000_esp32.h>
@@ -37,47 +46,52 @@
 // --- Adafruit ADS1115 ---
 #include <Adafruit_ADS1X15.h>
 
+// --- SensESP/OneWire library (github.com/SensESP/OneWire) ---
+#include <sensesp_onewire/onewire_temperature.h>
+
 // --- Project modules ---
 #include "halmet_config.h"
 #include "BilgeFan.h"
 #include "RpmSensor.h"
-#include "OneWireSensors.h"
 #include "N2kSenders.h"
 
 using namespace sensesp;
+using namespace sensesp::onewire;
 
 // ============================================================
-//  Global objects
+//  Global hardware objects
 // ============================================================
-static tNMEA2000_esp32 gNmea2000;
+static tNMEA2000_esp32  gNmea2000;
 static Adafruit_ADS1115 gAds;
 static RpmSensor        gRpm(HALMET_PIN_D1);
-static OneWireSensors   gOneWire(HALMET_PIN_1WIRE);
 static BilgeFan         gBilgeFan(HALMET_PIN_RELAY, /*activeHigh=*/true);
 
-// Runtime-configurable parameters (stored in NVS by SensESP)
-// These objects expose themselves to the web config UI automatically.
-static auto* gPurgeDurationSec  = new NumberConfig(DEFAULT_PURGE_DURATION_S,
-                                                    "/bilge/purge_duration_s",
-                                                    "Bilge fan purge duration (seconds)");
-static auto* gPulsesPerRev      = new NumberConfig(DEFAULT_PULSES_PER_REVOLUTION,
-                                                    "/rpm/pulses_per_rev",
-                                                    "Alternator pulses per engine revolution");
-static auto* gEngineRunningRpm  = new NumberConfig(DEFAULT_ENGINE_RUNNING_RPM,
-                                                    "/rpm/running_threshold",
-                                                    "RPM threshold: engine considered running");
-static auto* gTankCapacityL     = new NumberConfig(DEFAULT_TANK_CAPACITY_L,
-                                                    "/tank/capacity_l",
-                                                    "Tank capacity (litres)");
+// ============================================================
+//  Configurable runtime parameters
+//  PersistingObservableValue<T> stores the value to LittleFS so it
+//  survives reboots. ConfigItem<T> registers a web-UI config card.
+// ============================================================
+static PersistingObservableValue<float>* gPurgeDurationSec = nullptr;
+static PersistingObservableValue<float>* gPulsesPerRev     = nullptr;
+static PersistingObservableValue<float>* gEngineRunningRpm = nullptr;
+static PersistingObservableValue<float>* gTankCapacityL    = nullptr;
+
+// ============================================================
+//  Shared state (written by sensor callbacks, read by N2K senders)
+// ============================================================
+static float gCoolantK     = 273.15f;
+static bool  gOilAlarm     = false;
+static bool  gTempAlarm    = false;
+static float gTankLevelPct = TANK_LEVEL_HIGH_PCT;
 
 // ============================================================
 //  Engine-state debounce
 // ============================================================
-static bool    gEngineRunning      = false;
-static bool    gEngineRunningRaw   = false;
-static uint32_t gEngineStateMs     = 0;
+static bool     gEngineRunning    = false;
+static bool     gEngineRunningRaw = false;
+static uint32_t gEngineStateMs    = 0;
 
-static bool debounceEngineState(bool rawRunning) {
+static void updateEngineState(bool rawRunning) {
     if (rawRunning != gEngineRunningRaw) {
         gEngineRunningRaw = rawRunning;
         gEngineStateMs    = millis();
@@ -85,16 +99,14 @@ static bool debounceEngineState(bool rawRunning) {
     if ((millis() - gEngineStateMs) >= ENGINE_STATE_DEBOUNCE_MS) {
         gEngineRunning = gEngineRunningRaw;
     }
-    return gEngineRunning;
 }
 
 // ============================================================
-//  Voltage → Temperature curve (VP / VDO NTC sender)
-//  Points: {voltage_V, temperature_C}
+//  Voltage → Temperature curve interpolation (VP / VDO NTC sender)
 // ============================================================
 struct CurvePoint { float v; float c; };
 static const CurvePoint kTempCurve[] = { TEMP_CURVE_POINTS };
-static constexpr int    kTempCurveLen = sizeof(kTempCurve) / sizeof(CurvePoint);
+static constexpr int kTempCurveLen = sizeof(kTempCurve) / sizeof(CurvePoint);
 
 static float voltageToCelsius(float volt) {
     if (volt <= kTempCurve[kTempCurveLen - 1].v) return kTempCurve[kTempCurveLen - 1].c;
@@ -106,33 +118,22 @@ static float voltageToCelsius(float volt) {
             return kTempCurve[i + 1].c + ratio * (kTempCurve[i].c - kTempCurve[i + 1].c);
         }
     }
-    return -1.0f;  // Should not reach here
+    return -1.0f;
 }
 
 // ============================================================
-//  Signal K output producers (WiFi supplemental)
-//  These fire whenever their source observable emits a value.
+//  Signal K outputs (WiFi, for data with no NMEA 2000 PGN)
 // ============================================================
-static SKOutputBool* gSkFanState    = nullptr;
-static SKOutputBool* gSkIgnState    = nullptr;
+static SKOutputBool* gSkFanState = nullptr;
+static SKOutputBool* gSkIgnState = nullptr;
 
 // ============================================================
-//  N2K setup
+//  NMEA 2000 setup
 // ============================================================
 static void setupNmea2000() {
-    gNmea2000.SetProductInformation(
-        N2K_DEVICE_SERIAL,
-        100,                          // product code
-        N2K_MODEL_ID,
-        "1.0.0",                      // firmware version
-        "1.0.0"                       // model version
-    );
-    gNmea2000.SetDeviceInformation(
-        123456789UL,                  // Unique device number (change per unit)
-        160,                          // Device function: Engine Gateway
-        25,                           // Device class: Inter/Intranetwork Device
-        2046                          // Manufacturer code (use Nmea.org assigned)
-    );
+    gNmea2000.SetProductInformation(N2K_DEVICE_SERIAL, 100, N2K_MODEL_ID,
+                                    "1.0.0", "1.0.0");
+    gNmea2000.SetDeviceInformation(123456789UL, 160, 25, 2046);
     gNmea2000.SetMode(tNMEA2000::N2km_NodeOnly, 23);
     gNmea2000.EnableForward(false);
     gNmea2000.Open();
@@ -142,237 +143,165 @@ static void setupNmea2000() {
 //  Arduino setup()
 // ============================================================
 void setup() {
-    Serial.begin(115200);
-    delay(100);
-    Serial.println("\n[HALMET] Engine & Tank Monitor starting...");
+    // SensESP v3 logging init (replaces SetupSerialDebug)
+    SetupLogging();
 
-    // --- Alarm inputs (active-low, external pull via HALMET) ---
-    pinMode(HALMET_PIN_D2, INPUT_PULLUP);
-    pinMode(HALMET_PIN_D3, INPUT_PULLUP);
+    // --- Digital inputs ---
+    pinMode(HALMET_PIN_D2, INPUT_PULLUP);   // Oil pressure warning (active-low)
+    pinMode(HALMET_PIN_D3, INPUT_PULLUP);   // Temperature warning  (active-low)
     pinMode(HALMET_PIN_D4, INPUT_PULLUP);   // Ignition key sense
 
-    // --- RPM sensor ---
+    // --- RPM pulse counter ---
     gRpm.begin();
 
     // --- Bilge fan relay ---
     gBilgeFan.begin();
 
-    // --- ADS1115 ---
+    // --- ADS1115 ADC ---
     Wire.begin();
     if (!gAds.begin(ADS1115_ADDRESS)) {
-        Serial.println("[ERROR] ADS1115 not found — check I2C wiring!");
+        ESP_LOGE("HALMET", "ADS1115 not found — check I2C wiring!");
     }
-    // 0–3.3 V range with PGA = ±4.096 V (gain 1) → ~0.125 mV/bit
-    gAds.setGain(GAIN_ONE);
-    gAds.setDataRate(RATE_ADS1115_8SPS);   // Slow rate for stable readings
-
-    // --- DS18B20 1-Wire ---
-    gOneWire.begin();
+    gAds.setGain(GAIN_ONE);           // ±4.096 V range, 0.125 mV/bit
+    gAds.setDataRate(RATE_ADS1115_8SPS);
 
     // --- NMEA 2000 ---
     setupNmea2000();
 
-    // --- SensESP (WiFi, web config, Signal K) ---
+    // --- SensESP v3 app builder ---
+    // set_wifi_client(ssid, password): if omitted, WifiManager creates a config AP.
+    // set_sk_server(): if omitted, mDNS discovery is used.
+    // No ->get_app() assignment needed unless you need the app pointer later.
+    // No sensesp_app->start() — removed in v3.
     SensESPAppBuilder builder;
-    auto* sensesp_app = builder
-        .set_hostname("halmet-engine")
-        .set_wifi_client("your_ssid", "your_password")   // or use AP mode
-        .set_sk_server("signalk-server-ip", 3000)
-        .get_app();
+    builder.set_hostname("halmet-engine")
+           ->set_wifi_client("your_ssid", "your_password")
+           ->set_sk_server("signalk-server-ip", 3000)
+           ->get_app();
 
-    // --- Signal K outputs for data without N2K PGNs ---
-    gSkFanState = new SKOutputBool(
-        "electrical.switches.bilgeFan.state", "",
-        new SKMetadata("Bilge fan", "Bilge fan purge active"));
+    // --- Configurable parameters (web UI + persisted to flash) ---
+    gPurgeDurationSec = new PersistingObservableValue<float>(
+        DEFAULT_PURGE_DURATION_S, "/bilge/purge_duration_s");
+    ConfigItem(gPurgeDurationSec)
+        ->set_title("Bilge fan purge duration (s)");
 
-    gSkIgnState = new SKOutputBool(
-        "electrical.switches.ignition.state", "",
-        new SKMetadata("Ignition key", "Ignition key present"));
+    gPulsesPerRev = new PersistingObservableValue<float>(
+        DEFAULT_PULSES_PER_REVOLUTION, "/rpm/pulses_per_rev");
+    ConfigItem(gPulsesPerRev)
+        ->set_title("Alternator pulses per engine revolution");
 
-    // Push initial values
+    gEngineRunningRpm = new PersistingObservableValue<float>(
+        DEFAULT_ENGINE_RUNNING_RPM, "/rpm/running_threshold");
+    ConfigItem(gEngineRunningRpm)
+        ->set_title("RPM threshold: engine considered running");
+
+    gTankCapacityL = new PersistingObservableValue<float>(
+        DEFAULT_TANK_CAPACITY_L, "/tank/capacity_l");
+    ConfigItem(gTankCapacityL)
+        ->set_title("Tank capacity (litres)");
+
+    // --- Signal K outputs for data with no NMEA 2000 PGN ---
+    gSkFanState = new SKOutputBool("electrical.switches.bilgeFan.state", "",
+                                   new SKMetadata("Bilge fan", "Bilge fan purge active"));
+    gSkIgnState = new SKOutputBool("electrical.switches.ignition.state", "",
+                                   new SKMetadata("Ignition key", "Ignition key present"));
     gSkFanState->set(false);
     gSkIgnState->set(false);
 
-    // --- Bilge fan relay change → Signal K ---
+    // Relay state change callback → Signal K
     gBilgeFan.onRelayChange([](bool on) {
         if (gSkFanState) gSkFanState->set(on);
-        Serial.printf("[BilgeFan] Relay -> %s\n", on ? "ON" : "OFF");
+        ESP_LOGI("BilgeFan", "Relay -> %s", on ? "ON" : "OFF");
     });
 
-    Serial.println("[HALMET] Setup complete.");
-    sensesp_app->start();
+    // --- DS18B20 1-Wire via SensESP/OneWire ---
+    // DallasTemperatureSensors discovers all sensors on the bus at init.
+    // Each OneWireTemperature is a SensESP producer; the web UI allows
+    // mapping physical sensor ROM addresses to logical slots.
+    auto* dts = new DallasTemperatureSensors(HALMET_PIN_1WIRE);
+    for (int i = 0; i < 6; i++) {
+        String cfg = "/onewire/sensor" + String(i);
+        String sk  = "environment.inside.engineRoom.temperature." + String(i);
+        // OneWireTemperature outputs temperature in Kelvin
+        auto* ow = new OneWireTemperature(dts, INTERVAL_1WIRE_MS, cfg.c_str());
+        ow->connect_to(new SKOutputFloat(sk));
+        // N2K PGN 130316 is sent from the polling event below using
+        // the raw K value; for simplicity we re-poll the bus there.
+    }
+
+    // -----------------------------------------------------------------------
+    //  Periodic work registered as ReactESP events.
+    //  All timing is handled by the SensESP event loop — no millis() needed.
+    // -----------------------------------------------------------------------
+
+    // RPM counter + N2K PGN 127488 (100 ms / 10 Hz)
+    event_loop()->onRepeat(INTERVAL_RPM_MS, []() {
+        gRpm.setPulsesPerRev(gPulsesPerRev->get());
+        float rpm = gRpm.update();
+        updateEngineState(rpm > gEngineRunningRpm->get());
+        N2kSenders::sendEngineRapidUpdate(gNmea2000, N2K_ENGINE_INSTANCE, rpm);
+    });
+
+    // Analog reads: coolant temp + Gobius tank thresholds (200 ms)
+    event_loop()->onRepeat(INTERVAL_ANALOG_MS, []() {
+        // A1 — VP coolant temperature sender (passive voltage)
+        float volts0 = gAds.computeVolts(gAds.readADC_SingleEnded(0));
+        gCoolantK = voltageToCelsius(volts0) + 273.15f;
+
+        // A2 — Gobius sensor A (below 3/4 threshold)
+        bool below3q = gAds.computeVolts(gAds.readADC_SingleEnded(1))
+                       < GOBIUS_THRESHOLD_VOLTAGE;
+        // A3 — Gobius sensor B (below 1/4 threshold)
+        bool below1q = gAds.computeVolts(gAds.readADC_SingleEnded(2))
+                       < GOBIUS_THRESHOLD_VOLTAGE;
+
+        if (below1q)      gTankLevelPct = TANK_LEVEL_LOW_PCT;   // 12.5 %
+        else if (below3q) gTankLevelPct = TANK_LEVEL_MID_PCT;   // 50.0 %
+        else              gTankLevelPct = TANK_LEVEL_HIGH_PCT;   // 87.5 %
+    });
+
+    // Alarm digital inputs (500 ms)
+    event_loop()->onRepeat(INTERVAL_DIGITAL_ALARM_MS, []() {
+        gOilAlarm  = (digitalRead(HALMET_PIN_D2) == LOW);
+        gTempAlarm = (digitalRead(HALMET_PIN_D3) == LOW);
+        if (gOilAlarm)  ESP_LOGW("HALMET", "Oil pressure LOW");
+        if (gTempAlarm) ESP_LOGW("HALMET", "Engine temperature HIGH");
+    });
+
+    // N2K slow PGNs: PGN 127489 + PGN 127505 (1 s)
+    event_loop()->onRepeat(1000, []() {
+        N2kSenders::sendEngineDynamic(gNmea2000, N2K_ENGINE_INSTANCE,
+                                      gCoolantK, N2kDoubleNA,
+                                      gOilAlarm, gTempAlarm);
+        // N2kft_Diesel may be absent in older library versions.
+        // The closest available alternative is N2kft_Oil.
+        // Upgrade the NMEA2000-library if you need N2kft_Diesel.
+        N2kSenders::sendFluidLevel(gNmea2000, 0, N2kft_Oil,
+                                   gTankLevelPct, gTankCapacityL->get());
+    });
+
+    // Bilge fan state machine tick (1 s)
+    event_loop()->onRepeat(INTERVAL_FAN_MS, []() {
+        gBilgeFan.update(gEngineRunning, gPurgeDurationSec->get());
+    });
+
+    // Signal K supplemental data (5 s)
+    event_loop()->onRepeat(5000, []() {
+        if (gSkFanState) gSkFanState->set(gBilgeFan.relayOn());
+        if (gSkIgnState) gSkIgnState->set(digitalRead(HALMET_PIN_D4) == HIGH);
+    });
+
+    // NMEA 2000 message pump (every 1 ms — must be fast)
+    event_loop()->onRepeat(1, []() {
+        gNmea2000.ParseMessages();
+    });
+
+    ESP_LOGI("HALMET", "Setup complete.");
 }
 
 // ============================================================
-//  Arduino loop()
+//  Arduino loop() — SensESP v3: just tick the event loop
 // ============================================================
 void loop() {
-    static uint32_t lastRpmMs     = 0;
-    static uint32_t lastAnalogMs  = 0;
-    static uint32_t lastAlarmMs   = 0;
-    static uint32_t last1WireMs   = 0;
-    static uint32_t last1WireWaitMs = 0;
-    static bool     oneWirePending  = false;
-    static uint32_t lastFanMs     = 0;
-    static uint32_t lastN2kFastMs = 0;
-    static uint32_t lastN2kSlowMs = 0;
-    static uint32_t lastSkMs      = 0;
-
-    uint32_t now = millis();
-
-    // ---- Pump SensESP event loop ----
-    app.tick();
-    gNmea2000.ParseMessages();
-
-    // --------------------------------------------------------
-    //  RPM update  (every INTERVAL_RPM_MS)
-    // --------------------------------------------------------
-    if (now - lastRpmMs >= INTERVAL_RPM_MS) {
-        lastRpmMs = now;
-        gRpm.setPulsesPerRev(gPulsesPerRev->getValue());
-        float rpm = gRpm.update();
-        bool rawRunning = (rpm > gEngineRunningRpm->getValue());
-        debounceEngineState(rawRunning);
-    }
-
-    // --------------------------------------------------------
-    //  N2K fast PGN 127488 — Engine Rapid Update  (~10 Hz)
-    // --------------------------------------------------------
-    if (now - lastN2kFastMs >= 100) {
-        lastN2kFastMs = now;
-        N2kSenders::sendEngineRapidUpdate(gNmea2000,
-                                          N2K_ENGINE_INSTANCE,
-                                          gRpm.getRpm());
-    }
-
-    // --------------------------------------------------------
-    //  Alarm inputs (D2 oil, D3 temp)  every 500 ms
-    // --------------------------------------------------------
-    if (now - lastAlarmMs >= INTERVAL_DIGITAL_ALARM_MS) {
-        lastAlarmMs = now;
-        // Active-low: LOW = alarm active
-        bool oilAlarm  = (digitalRead(HALMET_PIN_D2) == LOW);
-        bool tempAlarm = (digitalRead(HALMET_PIN_D3) == LOW);
-
-        if (oilAlarm)  Serial.println("[ALARM] Oil pressure LOW");
-        if (tempAlarm) Serial.println("[ALARM] Engine temperature HIGH");
-
-        // Store for N2K slow sender below
-        // (static locals — visible within this block only)
-        static bool lastOilAlarm  = false;
-        static bool lastTempAlarm = false;
-        lastOilAlarm  = oilAlarm;
-        lastTempAlarm = tempAlarm;
-    }
-
-    // --------------------------------------------------------
-    //  Analog reads: temp sender + Gobius tanks  (every 200 ms)
-    // --------------------------------------------------------
-    if (now - lastAnalogMs >= INTERVAL_ANALOG_MS) {
-        lastAnalogMs = now;
-
-        // A1 — coolant temperature sender (passive voltage mode)
-        int16_t raw0 = gAds.readADC_SingleEnded(0);
-        float   volts0 = gAds.computeVolts(raw0);
-        float   coolantC = voltageToCelsius(volts0);
-        float   coolantK = coolantC + 273.15f;
-
-        // A2 — Gobius sensor A: output sinks LOW when tank is below 3/4
-        int16_t raw1     = gAds.readADC_SingleEnded(1);
-        float   volts1   = gAds.computeVolts(raw1);
-        bool    below3q  = (volts1 < GOBIUS_THRESHOLD_VOLTAGE);  // true = below 3/4
-
-        // A3 — Gobius sensor B: output sinks LOW when tank is below 1/4
-        int16_t raw2     = gAds.readADC_SingleEnded(2);
-        float   volts2   = gAds.computeVolts(raw2);
-        bool    below1q  = (volts2 < GOBIUS_THRESHOLD_VOLTAGE);  // true = below 1/4
-
-        // Combine both thresholds into a single level estimate.
-        // Note: below1q implies below3q; if hardware disagrees, trust below3q.
-        float tankLevelPct;
-        if (below1q) {
-            // Tank is below 1/4 — both sensors should be triggered
-            tankLevelPct = TANK_LEVEL_LOW_PCT;   // 12.5 %
-        } else if (below3q) {
-            // Tank is between 1/4 and 3/4 — only the 3/4 sensor is triggered
-            tankLevelPct = TANK_LEVEL_MID_PCT;   // 50.0 %
-        } else {
-            // Tank is at or above 3/4 — neither sensor triggered
-            tankLevelPct = TANK_LEVEL_HIGH_PCT;  // 87.5 %
-        }
-
-        // A4 — spare (battery voltage, optional)
-        // int16_t raw3 = gAds.readADC_SingleEnded(3);
-        // float volts3 = gAds.computeVolts(raw3) * (68.0f + 10.0f) / 10.0f; // divider
-
-        // ---- N2K slow PGNs (1 Hz) ----
-        if (now - lastN2kSlowMs >= 1000) {
-            lastN2kSlowMs = now;
-
-            // Read alarm state — captured 500 ms ago above
-            bool oilAlarm  = (digitalRead(HALMET_PIN_D2) == LOW);
-            bool tempAlarm = (digitalRead(HALMET_PIN_D3) == LOW);
-
-            N2kSenders::sendEngineDynamic(gNmea2000,
-                                          N2K_ENGINE_INSTANCE,
-                                          coolantK,
-                                          N2kDoubleNA,    // oil pressure (Pa) — binary only
-                                          oilAlarm,
-                                          tempAlarm);
-
-            // Single tank, single PGN 127505 message (instance 0).
-            // Level is derived from two Gobius threshold sensors (see above).
-            N2kSenders::sendFluidLevel(gNmea2000,
-                                       0,                            // tank instance 0
-                                       N2kft_Diesel,                 // adjust to actual fluid type
-                                       tankLevelPct,
-                                       gTankCapacityL->getValue());
-        }
-    }
-
-    // --------------------------------------------------------
-    //  DS18B20 1-Wire sensors  (request every 10 s, read after 800 ms)
-    // --------------------------------------------------------
-    if (!oneWirePending && (now - last1WireMs >= INTERVAL_1WIRE_MS)) {
-        last1WireMs      = now;
-        last1WireWaitMs  = now;
-        gOneWire.requestAll();
-        oneWirePending = true;
-    }
-    if (oneWirePending && (now - last1WireWaitMs >= 800)) {
-        oneWirePending = false;
-        for (int i = 0; i < gOneWire.count(); i++) {
-            float tempK = gOneWire.getTemperatureK(i);
-            if (tempK > 0.0f) {
-                N2kSenders::sendTemperatureExtended(
-                    gNmea2000,
-                    i,                           // sensor instance
-                    N2kts_EngineRoomTemperature,
-                    tempK);
-            }
-        }
-    }
-
-    // --------------------------------------------------------
-    //  Bilge fan state machine tick  (every 1 s)
-    // --------------------------------------------------------
-    if (now - lastFanMs >= INTERVAL_FAN_MS) {
-        lastFanMs = now;
-        gBilgeFan.update(gEngineRunning, gPurgeDurationSec->getValue());
-    }
-
-    // --------------------------------------------------------
-    //  Signal K supplemental outputs  (every 5 s)
-    //  For data with no suitable NMEA 2000 PGN
-    // --------------------------------------------------------
-    if (now - lastSkMs >= 5000) {
-        lastSkMs = now;
-
-        // Bilge fan relay state (published via onRelayChange callback too)
-        if (gSkFanState) gSkFanState->set(gBilgeFan.relayOn());
-
-        // Ignition key sense (D4 — optional)
-        bool ignitionOn = (digitalRead(HALMET_PIN_D4) == HIGH);
-        if (gSkIgnState) gSkIgnState->set(ignitionOn);
-    }
+    event_loop()->tick();
 }

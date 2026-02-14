@@ -37,17 +37,24 @@ void sendEngineDynamic(tNMEA2000& nmea2000,
     status1.Bits.LowOilPressure   = oilPressureLow    ? 1 : 0;
     status1.Bits.OverTemperature  = overTemperature    ? 1 : 0;
 
+    // Actual library signature (from N2kMessages.h:1172):
+    // (msg, instance, OilPress, OilTemp, CoolantTemp, AlternatorVoltage,
+    //  FuelRate, EngineHours, CoolantPressure, FuelPressure,
+    //  EngineLoad, EngineTorque, Status1, Status2)
+    // Note: OilTemp is a separate field from CoolantTemp.
+    //       Status structs come AFTER the two int8_t load/torque fields.
     SetN2kEngineDynamicParam(msg,
                              engineInstance,
-                             oilPressurePa,       // oil pressure (Pa), N2kDoubleNA if not measured
-                             coolantTempK,         // engine coolant temperature (K)
-                             alternatorVoltage,    // alternator voltage (V), N2kDoubleNA if not measured
-                             N2kDoubleNA,          // fuel rate (L/h)
-                             N2kDoubleNA,          // total engine hours (s)
-                             N2kDoubleNA,          // coolant pressure
-                             N2kDoubleNA,          // fuel pressure
-                             N2kInt8NA,            // engine load (%)
-                             N2kInt8NA,            // engine torque (%)
+                             oilPressurePa,     // EngineOilPress (Pa)
+                             N2kDoubleNA,       // EngineOilTemp  (K) — not measured
+                             coolantTempK,      // EngineCoolantTemp (K)
+                             alternatorVoltage, // AlternatorVoltage (V)
+                             N2kDoubleNA,       // FuelRate (L/h)
+                             N2kDoubleNA,       // EngineHours (s)
+                             N2kDoubleNA,       // EngineCoolantPressure
+                             N2kDoubleNA,       // FuelPressure
+                             N2kInt8NA,         // EngineLoad (%)
+                             N2kInt8NA,         // EngineTorque (%)
                              status1,
                              status2);
     nmea2000.SendMsg(msg);

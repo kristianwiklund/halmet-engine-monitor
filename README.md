@@ -98,8 +98,8 @@ Managed automatically by PlatformIO from `platformio.ini`:
 | SensESP v3 | `SignalK/SensESP @ ^3.1.0` | PlatformIO registry |
 | NMEA2000-library | `ttlappalainen/NMEA2000-library` | Registry name has a **hyphen** |
 | NMEA2000_esp32 | GitHub URL | Not in registry — pulled directly |
-| OneWire | `paulstoffregen/OneWire @ ^2.3` | PlatformIO registry |
-| DallasTemperature | `milesburton/DallasTemperature @ ^3.9` | PlatformIO registry |
+| esp_websocket_client | IDF Component Registry URL | IDF 5.x managed component |
+| SensESP/OneWire | `SensESP/OneWire @ ^3.0.1` | Replaces raw OneWire + DallasTemperature |
 | Adafruit ADS1X15 | `adafruit/Adafruit ADS1X15 @ ^2.5` | PlatformIO registry |
 
 ## Troubleshooting
@@ -147,6 +147,35 @@ build_flags =
     -D USE_ESP_IDF_LOG
     -D CORE_DEBUG_LEVEL=ARDUHAL_LOG_LEVEL_WARN
 ```
+
+### `fatal error: esp_websocket_client.h: No such file or directory`
+
+In ESP-IDF 4.x, `esp_websocket_client` was bundled with the SDK. In IDF 5.x (pioarduino) it became a separately managed component. Declare it in `lib_deps` using the `name=url` syntax so PlatformIO registers it as a named IDF component:
+
+```ini
+lib_deps =
+    esp_websocket_client=https://components.espressif.com/api/downloads/?object_type=component&object_id=dbc87006-9a4b-45e6-a6ab-b286174cb413
+```
+
+Note the `name=` prefix — a bare URL without it causes the component to be treated as an anonymous download and not wired into the IDF component build system correctly.
+
+### `fatal error: OneWire.h: No such file or directory` / `sensesp.h` / `NMEA2000.h`
+
+All three share the same root cause: PlatformIO's default Library Dependency Finder mode is `chain`, which only scans one level of `#include` directives. It reads your `src/` files, finds the libraries they include directly, but **stops there** — it does not recurse into those libraries' own headers.
+
+`OneWire.h`, `sensesp.h`, and `NMEA2000.h` are all included from **inside** library headers (not directly from `src/`), so LDF in `chain` mode never discovers them.
+
+The fix is two lines:
+
+```ini
+; Recurse into all library headers to find transitive dependencies
+lib_ldf_mode = deep
+
+; Link object files directly — required by pioarduino (weak-symbol handling)
+lib_archive = no
+```
+
+`lib_ldf_mode = deep` makes LDF recurse into every header of every library it finds, so transitive dependencies are discovered automatically. `lib_archive = no` is a separate but related pioarduino requirement: without it the linker discards weak-symbol overrides in the ESP-IDF framework, causing obscure link failures after compilation succeeds.
 
 ## License
 

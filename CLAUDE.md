@@ -47,8 +47,8 @@ Single environment: `halmet`. No test suite exists.
 These differ from v2 docs/examples found online:
 - No global `ReactESP` app object; use `event_loop()` free function
 - No `sensesp_app->start()` — removed in v3
-- `NumberConfig` → `PersistingObservableValue<T>` + `ConfigItem<T>`
-- `set_wifi_client()` → `set_wifi()`
+- `NumberConfig` → `PersistingObservableValue<T>` + `ConfigItem(ptr)` (free function, not a class)
+- `set_wifi()` is deprecated → use `set_wifi_client()`
 - `SetupSerialDebug()` → `SetupLogging()`
 - Builder methods return pointer (use `->` not `.`)
 
@@ -59,3 +59,9 @@ Runtime parameters editable via SensESP web UI at `http://halmet-engine.local/co
 - `/rpm/running_threshold` — RPM above which engine is "running"
 - `/bilge/purge_duration_s` — bilge fan on-time after engine stop
 - `/tank/capacity_l` — tank volume for PGN 127505
+
+## Key Gotchas
+
+- `ConfigItem` is a **free function template** (`ConfigItem(ptr)`), not a class to `new`. It deduces the template type from the pointer.
+- OneWire classes (`DallasTemperatureSensors`, `OneWireTemperature`) are in namespace `sensesp::onewire`, not `sensesp`.
+- PlatformIO upload on Windows may hit a `UnicodeEncodeError` in progress bars. Workaround: set `PYTHONIOENCODING=utf-8`.
