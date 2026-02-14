@@ -50,6 +50,7 @@
 #include <sensesp_onewire/onewire_temperature.h>
 
 // --- Project modules ---
+#include "secrets.h"
 #include "halmet_config.h"
 #include "BilgeFan.h"
 #include "RpmSensor.h"
@@ -175,8 +176,8 @@ void setup() {
     // No sensesp_app->start() — removed in v3.
     SensESPAppBuilder builder;
     builder.set_hostname("halmet-engine")
-           ->set_wifi_client("your_ssid", "your_password")
-           ->set_sk_server("signalk-server-ip", 3000)
+           ->set_wifi_client(WIFI_SSID, WIFI_PASSWORD)
+           ->set_sk_server(SK_SERVER_IP, SK_SERVER_PORT)
            ->get_app();
 
     // --- Configurable parameters (web UI + persisted to flash) ---

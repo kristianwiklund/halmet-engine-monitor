@@ -33,6 +33,17 @@ GPIO 32        → Bilge fan relay module IN
 See `HALMET_Marine_Engine_Monitor_Design.md` for full electrical details
 and commissioning procedures.
 
+## Setup
+
+Before building, copy the secrets template and fill in your network details:
+
+```bash
+cp src/secrets.h.example src/secrets.h
+# Edit src/secrets.h with your WiFi SSID, password, and Signal K server address
+```
+
+`src/secrets.h` is gitignored and will not be committed.
+
 ## Build & Flash
 
 ```bash
