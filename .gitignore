@@ -19,6 +19,9 @@
 # PlatformIO IDE project files
 *.piobuild
 
+# Claude Code local settings
+.claude/
+
 # Credentials — never commit real WiFi passwords
 # Copy secrets.h.example to secrets.h and fill in
 src/secrets.h

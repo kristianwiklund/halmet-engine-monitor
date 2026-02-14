@@ -294,39 +294,45 @@ The Signal K WebSocket client (`signalk_ws_client.cpp`) attempts to parse every 
 
 Prioritised improvements grouped into implementation sprints.
 
-### Sprint 1 — Safety & Quick Wins
+### Sprint 1 — Safety & Quick Wins (COMPLETE)
+
+All items implemented and verified on hardware (commit `8534703`).
+
+| # | Feature | Status |
+|---|---------|--------|
+| 1 | Alarm input debouncing (4-of-5 majority vote on D2/D3) | Done |
+| 2 | Coolant sensor fault detection (out-of-range voltage → `N2kDoubleNA`) | Done |
+| 3 | Stale data guard (>5 s without valid ADS read → `N2kDoubleNA`) | Done |
+| 4 | I2C bus fault recovery (periodic `Wire.begin()` + `gAds.begin()` retry) | Done |
+| 5 | Fix fluid type (`N2kft_Oil` → `N2kft_Fuel` in PGN 127505) | Done |
+
+Hardware watchdog was originally Sprint 1 item 1 but deferred to Sprint 3 due to OTA bricking risk (watchdog firing mid-flash corrupts firmware).
+
+### Sprint 2 — High-Value Features (NEXT)
 
 | # | Feature | Description | Complexity |
 |---|---------|-------------|------------|
-| 1 | Fix fluid type | Change `N2kft_Oil` → `N2kft_Diesel` in PGN 127505 so MFDs show the correct fuel gauge icon | Trivial |
-| 2 | Hardware watchdog | Register ESP32 task watchdog with ~8 s timeout; reset in `loop()`. Prevents silent hangs from I2C deadlock or WiFi stack stalls that would freeze the relay in its current state | Low |
-| 3 | Alarm input debouncing | Add majority-vote filter (4-of-5 samples) on D2/D3 oil and temperature alarm switches. Mechanical contacts on a vibrating diesel generate false alarms without debouncing | Low |
-| 4 | Coolant sensor fault detection | Detect open-circuit / short-circuit on A1 (voltage outside interpolation range) and send `N2kDoubleNA` instead of a misleading −1°C value | Low |
-| 5 | Stale data guard | Track age of last successful ADS1115 read; send `N2kDoubleNA` for coolant temperature in PGN 127489 if data is older than 5 s | Low |
-| 6 | I2C bus fault recovery | Periodically retry `Wire.begin()` + `gAds.begin()` if the ADS1115 init failed or stops responding. Engine vibration and EMI can glitch the I2C bus | Low |
-
-### Sprint 2 — High-Value Features
-
-| # | Feature | Description | Complexity |
-|---|---------|-------------|------------|
-| 7 | Configurable N2K engine instance | Replace hardcoded `N2K_ENGINE_INSTANCE 0` with a `PersistingObservableValue` + ConfigItem. Any second N2K engine gateway on the bus using instance 0 will cause PGN conflicts on every chartplotter | Low |
-| 8 | Temperature threshold alerting | Use the precise analog coolant temperature from A1 to trigger a Signal K notification *before* the binary alarm switch on D3 trips. Configurable warning threshold (e.g. 95°C) and alarm threshold (e.g. 105°C). The analog reading gives early warning the binary switch cannot | Medium |
-| 9 | Diagnostics heartbeat | Publish uptime, firmware version, ADS fail count, and `esp_reset_reason()` to Signal K every 10 s. Provides remote health visibility without physical access to the boat | Low |
+| 6 | Fix cold-boot coolant sentinel | Initialise `gCoolantK = N2kDoubleNA` so MFD shows blank (not 0°C) when ADS1115 is absent at boot. Stale guard currently skips when `gCoolantLastUpdateMs == 0` | Trivial |
+| 7 | Temperature threshold alerting | Use precise analog coolant temp from A1 to trigger Signal K notification *before* the binary alarm switch on D3 trips. Configurable warning (95°C) and alarm (105°C) thresholds via web UI | Medium |
+| 8 | Diagnostics heartbeat | Publish uptime, firmware version, ADS fail count, and `esp_reset_reason()` to Signal K every 10 s. Define `FW_VERSION_STR` as a build flag for reuse in Sprint 3 item 10 | Low |
 
 ### Sprint 3 — OTA & Robustness
 
 | # | Feature | Description | Complexity |
 |---|---------|-------------|------------|
-| 10 | Safe relay state before OTA | Force the bilge fan relay OFF when an OTA update begins. Without this, the relay is frozen in its current state for 30–90 s during the firmware write | Low |
-| 11 | Firmware version in N2K product info | Derive version string from git tag at build time (`-D FW_VERSION_STR`), pass to `SetProductInformation()`. After OTA the MFD can show the installed version | Low |
-| 12 | Runtime-configurable temp curve | Replace the compile-time `TEMP_CURVE_POINTS` macro with a `PersistingObservableValue<String>` parsed at runtime. Eliminates the need to recompile for different engines or sender variants | High |
+| 9 | Safe relay state before OTA | Force bilge fan relay OFF when OTA begins. Without this, relay freezes in current state for 30–90 s during firmware write | Low |
+| 10 | Firmware version in N2K product info | Pass `FW_VERSION_STR` (from Sprint 2 item 8) to `SetProductInformation()`. MFD shows installed version after OTA | Low |
+| 11 | Engine hours counter | Persist accumulated runtime seconds to LittleFS in 1-minute increments. Send in PGN 127489 `EngineTotalHours` field. Low complexity, high long-term value for service tracking | Low |
+| 12 | Hardware watchdog | Register ESP32 task watchdog with ~8 s timeout; reset in `loop()`. Now safe: OTA path is instrumented (item 9), recovery is verified | Low |
 
 ### Future — Architecture
 
+Trigger this sprint when `main.cpp` crosses ~500 lines or adding a new sensor requires touching more than two files.
+
 | # | Feature | Description | Complexity |
 |---|---------|-------------|------------|
-| 13 | Decompose monolithic setup() | Split `main.cpp` into focused modules (analog_inputs, digital_alarms, engine_state, n2k_publisher, diagnostics). Each module exposes an `init()` function that registers its own event-loop callbacks | Medium |
-| 14 | Shared state struct | Replace scattered `static` globals with a single `EngineState` struct. Required before the module split so all modules can read/write shared data without cross-including each other | Low |
+| 13 | Shared state struct | Replace scattered `static` globals with a single `EngineState` struct. Required before the module split so all modules can read/write shared data without cross-including each other | Low |
+| 14 | Decompose monolithic setup() | Split `main.cpp` into focused modules (analog_inputs, digital_alarms, engine_state, n2k_publisher, diagnostics). Each module exposes an `init()` function that registers its own event-loop callbacks | Medium |
 
 ### Candidate Pool
 
@@ -335,5 +341,6 @@ Features evaluated but not prioritised for the current boat. May be revisited fo
 | Feature | Reason deferred |
 |---------|----------------|
 | Two-tank support (second PGN 127505 instance) | Single tank with two Gobius threshold sensors — no second tank to monitor |
-| Engine hours counter (PGN 127489 `EngineTotalHours`) | Mechanical hour meter already fitted; digital duplicate not needed |
 | Battery voltage on A4 (PGN 127508) | Victron equipment already provides battery monitoring on the N2K bus |
+| Configurable N2K engine instance | Single engine on the bus; no conflict risk with current installation |
+| Runtime-configurable temp curve | High complexity, low value for single-boat install. Compile-time `TEMP_CURVE_POINTS` in `halmet_config.h` is easy to edit and reflash. Risk of malformed runtime config producing silently wrong temperatures |
