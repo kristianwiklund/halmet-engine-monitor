@@ -93,6 +93,15 @@
 #define N2K_MODEL_ID                    "HALMET Engine Monitor"
 
 // ----------------------------------------------------------
+//  I2C bus & ADS1115 (HALMET PCB-fixed, not variant-configurable)
+//  HALMET routes SDA→GPIO21, SCL→GPIO22.
+//  ADS1115 ADDR pin is tied to VCC → address 0x4B.
+// ----------------------------------------------------------
+#define HALMET_PIN_SDA          21
+#define HALMET_PIN_SCL          22
+#define ADS1115_I2C_ADDRESS     0x4B
+
+// ----------------------------------------------------------
 //  Polling intervals (ms)
 // ----------------------------------------------------------
 #define INTERVAL_ANALOG_MS              200     // A1 temp/tank reads

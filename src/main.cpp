@@ -158,10 +158,14 @@ void setup() {
     // --- Bilge fan relay ---
     gBilgeFan.begin();
 
-    // --- ADS1115 ADC ---
-    Wire.begin();
-    if (!gAds.begin(ADS1115_ADDRESS)) {
-        ESP_LOGE("HALMET", "ADS1115 not found — check I2C wiring!");
+    // --- I2C bus ---
+    Wire.begin(HALMET_PIN_SDA, HALMET_PIN_SCL);
+    Wire.setClock(400000);
+
+    // --- ADS1115 ADC (ADDR tied to VCC → 0x4B) ---
+    static bool gAdsOk = gAds.begin(ADS1115_I2C_ADDRESS, &Wire);
+    if (!gAdsOk) {
+        ESP_LOGE("HALMET", "ADS1115 not found at 0x4B — check I2C wiring!");
     }
     gAds.setGain(GAIN_ONE);           // ±4.096 V range, 0.125 mV/bit
     gAds.setDataRate(RATE_ADS1115_8SPS);
@@ -245,6 +249,7 @@ void setup() {
 
     // Analog reads: coolant temp + Gobius tank thresholds (200 ms)
     event_loop()->onRepeat(INTERVAL_ANALOG_MS, []() {
+        if (!gAdsOk) return;
         // A1 — VP coolant temperature sender (passive voltage)
         float volts0 = gAds.computeVolts(gAds.readADC_SingleEnded(0));
         gCoolantK = voltageToCelsius(volts0) + 273.15f;
