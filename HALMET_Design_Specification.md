@@ -303,30 +303,37 @@ Prioritised improvements grouped into implementation sprints.
 | 3 | Alarm input debouncing | Add majority-vote filter (4-of-5 samples) on D2/D3 oil and temperature alarm switches. Mechanical contacts on a vibrating diesel generate false alarms without debouncing | Low |
 | 4 | Coolant sensor fault detection | Detect open-circuit / short-circuit on A1 (voltage outside interpolation range) and send `N2kDoubleNA` instead of a misleading −1°C value | Low |
 | 5 | Stale data guard | Track age of last successful ADS1115 read; send `N2kDoubleNA` for coolant temperature in PGN 127489 if data is older than 5 s | Low |
-| 6 | Two-tank support | Send a second PGN 127505 (instance 1) for tank 2. The Gobius sensors and wiring already exist but only one tank is transmitted. Add `/tank/tank2_capacity_l` ConfigItem | Low |
-| 7 | I2C bus fault recovery | Periodically retry `Wire.begin()` + `gAds.begin()` if the ADS1115 init failed or stops responding. Engine vibration and EMI can glitch the I2C bus | Low |
+| 6 | I2C bus fault recovery | Periodically retry `Wire.begin()` + `gAds.begin()` if the ADS1115 init failed or stops responding. Engine vibration and EMI can glitch the I2C bus | Low |
 
 ### Sprint 2 — High-Value Features
 
 | # | Feature | Description | Complexity |
 |---|---------|-------------|------------|
-| 8 | Engine hours counter | Accumulate run-time while `gEngineRunning` is true, persist to LittleFS on engine stop, send in PGN 127489 `EngineTotalHours` field. Add a ConfigItem for the initial offset so the skipper can match the existing mechanical hour meter. This is the most visible gap vs. competitors (Yacht Devices, Maretron) | Medium |
-| 9 | Battery voltage (A4) | Read house bank voltage on ADS1115 channel 3 via a resistive divider (47 kΩ / 10 kΩ), send PGN 127508 (Battery Status). Add a ConfigItem for the divider calibration factor. Requires a two-resistor voltage divider on A4 — the only item needing a wiring change | Low |
-| 10 | Configurable N2K engine instance | Replace hardcoded `N2K_ENGINE_INSTANCE 0` with a `PersistingObservableValue` + ConfigItem. Any second N2K engine gateway on the bus using instance 0 will cause PGN conflicts on every chartplotter | Low |
-| 11 | Temperature threshold alerting | Use the precise analog coolant temperature from A1 to trigger a Signal K notification *before* the binary alarm switch on D3 trips. Configurable warning threshold (e.g. 95°C) and alarm threshold (e.g. 105°C). The analog reading gives early warning the binary switch cannot | Medium |
-| 12 | Diagnostics heartbeat | Publish uptime, firmware version, ADS fail count, and `esp_reset_reason()` to Signal K every 10 s. Provides remote health visibility without physical access to the boat | Low |
+| 7 | Configurable N2K engine instance | Replace hardcoded `N2K_ENGINE_INSTANCE 0` with a `PersistingObservableValue` + ConfigItem. Any second N2K engine gateway on the bus using instance 0 will cause PGN conflicts on every chartplotter | Low |
+| 8 | Temperature threshold alerting | Use the precise analog coolant temperature from A1 to trigger a Signal K notification *before* the binary alarm switch on D3 trips. Configurable warning threshold (e.g. 95°C) and alarm threshold (e.g. 105°C). The analog reading gives early warning the binary switch cannot | Medium |
+| 9 | Diagnostics heartbeat | Publish uptime, firmware version, ADS fail count, and `esp_reset_reason()` to Signal K every 10 s. Provides remote health visibility without physical access to the boat | Low |
 
 ### Sprint 3 — OTA & Robustness
 
 | # | Feature | Description | Complexity |
 |---|---------|-------------|------------|
-| 13 | Safe relay state before OTA | Force the bilge fan relay OFF when an OTA update begins. Without this, the relay is frozen in its current state for 30–90 s during the firmware write | Low |
-| 14 | Firmware version in N2K product info | Derive version string from git tag at build time (`-D FW_VERSION_STR`), pass to `SetProductInformation()`. After OTA the MFD can show the installed version | Low |
-| 15 | Runtime-configurable temp curve | Replace the compile-time `TEMP_CURVE_POINTS` macro with a `PersistingObservableValue<String>` parsed at runtime. Eliminates the need to recompile for different engines or sender variants | High |
+| 10 | Safe relay state before OTA | Force the bilge fan relay OFF when an OTA update begins. Without this, the relay is frozen in its current state for 30–90 s during the firmware write | Low |
+| 11 | Firmware version in N2K product info | Derive version string from git tag at build time (`-D FW_VERSION_STR`), pass to `SetProductInformation()`. After OTA the MFD can show the installed version | Low |
+| 12 | Runtime-configurable temp curve | Replace the compile-time `TEMP_CURVE_POINTS` macro with a `PersistingObservableValue<String>` parsed at runtime. Eliminates the need to recompile for different engines or sender variants | High |
 
 ### Future — Architecture
 
 | # | Feature | Description | Complexity |
 |---|---------|-------------|------------|
-| 16 | Decompose monolithic setup() | Split `main.cpp` into focused modules (analog_inputs, digital_alarms, engine_state, n2k_publisher, diagnostics). Each module exposes an `init()` function that registers its own event-loop callbacks | Medium |
-| 17 | Shared state struct | Replace scattered `static` globals with a single `EngineState` struct. Required before the module split so all modules can read/write shared data without cross-including each other | Low |
+| 13 | Decompose monolithic setup() | Split `main.cpp` into focused modules (analog_inputs, digital_alarms, engine_state, n2k_publisher, diagnostics). Each module exposes an `init()` function that registers its own event-loop callbacks | Medium |
+| 14 | Shared state struct | Replace scattered `static` globals with a single `EngineState` struct. Required before the module split so all modules can read/write shared data without cross-including each other | Low |
+
+### Candidate Pool
+
+Features evaluated but not prioritised for the current boat. May be revisited for other installations or if requirements change.
+
+| Feature | Reason deferred |
+|---------|----------------|
+| Two-tank support (second PGN 127505 instance) | Single tank with two Gobius threshold sensors — no second tank to monitor |
+| Engine hours counter (PGN 127489 `EngineTotalHours`) | Mechanical hour meter already fitted; digital duplicate not needed |
+| Battery voltage on A4 (PGN 127508) | Victron equipment already provides battery monitoring on the N2K bus |
