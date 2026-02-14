@@ -269,3 +269,64 @@ See §4.2 table above.
 - The Gobius sensors require their own 12 V supply (500 mA recommended per sensor). Do not power them from the HALMET GPIO pins.
 - Label all wiring with heat-shrink ferrule markers before final assembly.
 - The HALMET draws ~90 mA at 12 V with WiFi active — budget this from the NMEA 2000 backbone or a separate fused supply.
+
+---
+
+## 9. Known Benign Startup Errors
+
+The following error messages appear on the serial console during boot. They are caused by startup race conditions inside SensESP and do not affect functionality.
+
+### `Failed adding service http.tcp.` / `Failed adding service signalk-sensesp.tcp.`
+
+SensESP registers its HTTP server and Signal K WebSocket client as mDNS services via `MDNS.addService()`. These calls are scheduled as deferred `event_loop()->onDelay(0, ...)` callbacks, as is the `MDNS.begin()` call that initialises the mDNS responder. The `addService` callbacks can fire before `MDNS.begin()` has run or before WiFi is connected, causing the registration to fail.
+
+**Impact:** The web UI and WebSocket client work normally — these services are only used for mDNS browser discovery (e.g. Bonjour). The mDNS hostname (`halmet-engine.local`) still resolves correctly because `MDNS.begin()` eventually completes. This is a SensESP upstream issue, not a firmware bug.
+
+### `deserializeJson error: EmptyInput`
+
+The Signal K WebSocket client (`signalk_ws_client.cpp`) attempts to parse every incoming WebSocket frame as JSON. During connection establishment, the server may send empty frames (pings, keep-alives, or initial handshake artefacts). The `deserializeJson()` call returns `EmptyInput` for these, which is logged as an error but otherwise ignored — the client continues and processes subsequent valid messages normally.
+
+**Impact:** None. The Signal K connection recovers and operates normally after the initial empty frame.
+
+---
+
+## 10. Roadmap
+
+Prioritised improvements grouped into implementation sprints.
+
+### Sprint 1 — Safety & Quick Wins
+
+| # | Feature | Description | Complexity |
+|---|---------|-------------|------------|
+| 1 | Fix fluid type | Change `N2kft_Oil` → `N2kft_Diesel` in PGN 127505 so MFDs show the correct fuel gauge icon | Trivial |
+| 2 | Hardware watchdog | Register ESP32 task watchdog with ~8 s timeout; reset in `loop()`. Prevents silent hangs from I2C deadlock or WiFi stack stalls that would freeze the relay in its current state | Low |
+| 3 | Alarm input debouncing | Add majority-vote filter (4-of-5 samples) on D2/D3 oil and temperature alarm switches. Mechanical contacts on a vibrating diesel generate false alarms without debouncing | Low |
+| 4 | Coolant sensor fault detection | Detect open-circuit / short-circuit on A1 (voltage outside interpolation range) and send `N2kDoubleNA` instead of a misleading −1°C value | Low |
+| 5 | Stale data guard | Track age of last successful ADS1115 read; send `N2kDoubleNA` for coolant temperature in PGN 127489 if data is older than 5 s | Low |
+| 6 | Two-tank support | Send a second PGN 127505 (instance 1) for tank 2. The Gobius sensors and wiring already exist but only one tank is transmitted. Add `/tank/tank2_capacity_l` ConfigItem | Low |
+| 7 | I2C bus fault recovery | Periodically retry `Wire.begin()` + `gAds.begin()` if the ADS1115 init failed or stops responding. Engine vibration and EMI can glitch the I2C bus | Low |
+
+### Sprint 2 — High-Value Features
+
+| # | Feature | Description | Complexity |
+|---|---------|-------------|------------|
+| 8 | Engine hours counter | Accumulate run-time while `gEngineRunning` is true, persist to LittleFS on engine stop, send in PGN 127489 `EngineTotalHours` field. Add a ConfigItem for the initial offset so the skipper can match the existing mechanical hour meter. This is the most visible gap vs. competitors (Yacht Devices, Maretron) | Medium |
+| 9 | Battery voltage (A4) | Read house bank voltage on ADS1115 channel 3 via a resistive divider (47 kΩ / 10 kΩ), send PGN 127508 (Battery Status). Add a ConfigItem for the divider calibration factor. Requires a two-resistor voltage divider on A4 — the only item needing a wiring change | Low |
+| 10 | Configurable N2K engine instance | Replace hardcoded `N2K_ENGINE_INSTANCE 0` with a `PersistingObservableValue` + ConfigItem. Any second N2K engine gateway on the bus using instance 0 will cause PGN conflicts on every chartplotter | Low |
+| 11 | Temperature threshold alerting | Use the precise analog coolant temperature from A1 to trigger a Signal K notification *before* the binary alarm switch on D3 trips. Configurable warning threshold (e.g. 95°C) and alarm threshold (e.g. 105°C). The analog reading gives early warning the binary switch cannot | Medium |
+| 12 | Diagnostics heartbeat | Publish uptime, firmware version, ADS fail count, and `esp_reset_reason()` to Signal K every 10 s. Provides remote health visibility without physical access to the boat | Low |
+
+### Sprint 3 — OTA & Robustness
+
+| # | Feature | Description | Complexity |
+|---|---------|-------------|------------|
+| 13 | Safe relay state before OTA | Force the bilge fan relay OFF when an OTA update begins. Without this, the relay is frozen in its current state for 30–90 s during the firmware write | Low |
+| 14 | Firmware version in N2K product info | Derive version string from git tag at build time (`-D FW_VERSION_STR`), pass to `SetProductInformation()`. After OTA the MFD can show the installed version | Low |
+| 15 | Runtime-configurable temp curve | Replace the compile-time `TEMP_CURVE_POINTS` macro with a `PersistingObservableValue<String>` parsed at runtime. Eliminates the need to recompile for different engines or sender variants | High |
+
+### Future — Architecture
+
+| # | Feature | Description | Complexity |
+|---|---------|-------------|------------|
+| 16 | Decompose monolithic setup() | Split `main.cpp` into focused modules (analog_inputs, digital_alarms, engine_state, n2k_publisher, diagnostics). Each module exposes an `init()` function that registers its own event-loop callbacks | Medium |
+| 17 | Shared state struct | Replace scattered `static` globals with a single `EngineState` struct. Required before the module split so all modules can read/write shared data without cross-including each other | Low |

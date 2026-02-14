@@ -270,8 +270,6 @@ void setup() {
     event_loop()->onRepeat(INTERVAL_DIGITAL_ALARM_MS, []() {
         gOilAlarm  = (digitalRead(HALMET_PIN_D2) == LOW);
         gTempAlarm = (digitalRead(HALMET_PIN_D3) == LOW);
-        if (gOilAlarm)  ESP_LOGW("HALMET", "Oil pressure LOW");
-        if (gTempAlarm) ESP_LOGW("HALMET", "Engine temperature HIGH");
     });
 
     // N2K slow PGNs: PGN 127489 + PGN 127505 (1 s)
