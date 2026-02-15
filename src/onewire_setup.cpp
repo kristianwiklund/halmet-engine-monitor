@@ -1,7 +1,9 @@
 // ============================================================
-//  onewire_setup.cpp — 1-Wire temperature destination table + setup
+//  onewire_setup.cpp — Sensor-centric 1-Wire temperature config
 //
-//  Sprint 6: ROM-based sensor selection (bus scan + picker)
+//  Sprint 6 UX redesign: each detected sensor gets a config card
+//  with ROM address title, live temp description, and a dropdown
+//  to pick its destination (engine room, exhaust, sea water, etc.)
 // ============================================================
 
 #include "onewire_setup.h"
@@ -25,7 +27,7 @@ using namespace sensesp::onewire;
 // ---- APPEND ONLY — do not reorder or insert ----
 const TempDestination kTempDests[] = {
 //  config  label                     n2k   SK path
-    /*0*/  {"Disabled (raw SK)",       -1,  nullptr},
+    /*0*/  {"Not used",                -1,  nullptr},
     /*1*/  {"Engine room",              3,  "environment.inside.engineRoom.temperature"},
     /*2*/  {"Exhaust gas",             14,  "propulsion.0.exhaustTemperature"},
     /*3*/  {"Sea water",                0,  "environment.water.temperature"},
@@ -41,12 +43,21 @@ const TempDestination kTempDests[] = {
 const int kNumTempDests = sizeof(kTempDests) / sizeof(TempDestination);
 
 // ============================================================
-//  File-scope state: detected ROM addresses from bus scan
+//  File-scope state
 // ============================================================
 static std::vector<OWDevAddr> sDetectedAddrs;
 
+// Per-detected-sensor binding
+struct SensorBinding {
+    OWDevAddr                       addr;
+    PersistingObservableValue<String>* pov;       // persisted dest label
+    ConfigItemT<PersistingObservableValue<String>>* configItem;
+    int                             slot;         // assigned slot, or -1
+};
+static std::vector<SensorBinding> sBindings;
+
 // ============================================================
-//  Helper: format OWDevAddr as "28:ff:91:15:07:00:00:ca"
+//  Helper: format OWDevAddr as "28:aa:bb:cc:dd:ee:ff:00"
 // ============================================================
 static void formatAddr(char* buf, const OWDevAddr& addr) {
     sprintf(buf, "%02x:%02x:%02x:%02x:%02x:%02x:%02x:%02x",
@@ -54,12 +65,15 @@ static void formatAddr(char* buf, const OWDevAddr& addr) {
             addr[4], addr[5], addr[6], addr[7]);
 }
 
+// Helper: ROM address as compact hex (no colons) for config path
+static void formatAddrCompact(char* buf, const OWDevAddr& addr) {
+    sprintf(buf, "%02x%02x%02x%02x%02x%02x%02x%02x",
+            addr[0], addr[1], addr[2], addr[3],
+            addr[4], addr[5], addr[6], addr[7]);
+}
+
 // ============================================================
 //  Independent bus scan (before DallasTemperatureSensors)
-//
-//  Creates a temporary OneWireNg scanner in a scoped block,
-//  collects ROM addresses, then destroys it so DTS can claim
-//  the same pin later.
 // ============================================================
 static void scanBus() {
     sDetectedAddrs.clear();
@@ -81,6 +95,31 @@ static void scanBus() {
         formatAddr(buf, sDetectedAddrs[i]);
         ESP_LOGI("1Wire", "  [%d] %s", i, buf);
     }
+}
+
+// ============================================================
+//  Build dropdown JSON schema from kTempDests[].label
+// ============================================================
+static String buildDropdownSchema() {
+    String schema = R"({"type":"object","properties":{"value":{"title":"Destination","type":"string","enum":[)";
+    for (int i = 0; i < kNumTempDests; i++) {
+        if (i > 0) schema += ",";
+        schema += "\"";
+        schema += kTempDests[i].label;
+        schema += "\"";
+    }
+    schema += "]}}}";
+    return schema;
+}
+
+// ============================================================
+//  Find kTempDests index by label string, returns 0 if not found
+// ============================================================
+static int destIndexByLabel(const String& label) {
+    for (int i = 0; i < kNumTempDests; i++) {
+        if (label == kTempDests[i].label) return i;
+    }
+    return 0;  // "Not used"
 }
 
 // ============================================================
@@ -108,63 +147,111 @@ private:
 namespace onewire_setup {
 
 void init(Outputs& out) {
-    // ---- Step 1: scan bus independently ----
+    // Zero-init outputs
+    for (int i = 0; i < NUM_ONEWIRE_SLOTS; i++) {
+        out.owDest[i] = 0;
+        out.owSensors[i] = nullptr;
+    }
+
+    // ---- Step 1: scan bus ----
     scanBus();
 
-    // ---- Step 2: per-slot picker + dest config (before DTS) ----
-    // Build a label suffix showing detected addresses for the picker title
-    String addrList;
+    // ---- Step 2: build dropdown schema ----
+    String dropdownSchema = buildDropdownSchema();
+
+    // ---- Step 3: create config card per detected sensor ----
+    sBindings.clear();
+    sBindings.reserve(sDetectedAddrs.size());
+
     for (size_t i = 0; i < sDetectedAddrs.size(); i++) {
-        char buf[24];
-        formatAddr(buf, sDetectedAddrs[i]);
-        if (i > 0) addrList += ", ";
-        addrList += String((int)i) + "=" + buf;
+        char romColon[24];
+        formatAddr(romColon, sDetectedAddrs[i]);
+        char romCompact[20];
+        formatAddrCompact(romCompact, sDetectedAddrs[i]);
+
+        // Config path: /onewire/<rom_hex>/dest — stable across discovery order
+        String cfgPath = String("/onewire/") + romCompact + "/dest";
+
+        auto* pov = new PersistingObservableValue<String>(
+            String(kTempDests[0].label), cfgPath);
+
+        auto ci = ConfigItem(pov);
+        ci->set_title(romColon)
+          ->set_description("Not yet read")
+          ->set_config_schema(dropdownSchema)
+          ->set_requires_restart(true)
+          ->set_sort_order(2000 + (int)i);
+
+        SensorBinding binding;
+        binding.addr = sDetectedAddrs[i];
+        binding.pov = pov;
+        binding.configItem = ci.get();
+        binding.slot = -1;
+        sBindings.push_back(binding);
+
+        String destLabel = pov->get();
+        ESP_LOGI("1Wire", "Sensor %s → dest \"%s\"", romColon, destLabel.c_str());
     }
 
-    for (int i = 0; i < NUM_ONEWIRE_SLOTS; i++) {
-        // --- Address picker ---
-        String pickerCfg = "/onewire/sensor" + String(i) + "/address_picker";
-        auto* picker = new PersistingObservableValue<int>(-1, pickerCfg);
-        String pickerTitle = "Sensor " + String(i) + " address (-1=auto";
-        if (addrList.length() > 0) {
-            pickerTitle += ", " + addrList;
-        }
-        pickerTitle += ")";
-        ConfigItem(picker)->set_title(pickerTitle.c_str());
+    // ---- Step 4: slot assignment ----
+    int nextSlot = 0;
+    for (auto& b : sBindings) {
+        String destLabel = b.pov->get();
+        int destIdx = destIndexByLabel(destLabel);
 
-        // If picker has a valid selection, pre-write the ROM address
-        int pick = picker->get();
-        if (pick >= 0 && pick < (int)sDetectedAddrs.size()) {
+        if (destIdx == 0) continue;  // "Not used"
+
+        if (destIdx > 0 && destLabel != String(kTempDests[destIdx].label)) {
+            // Label mismatch (shouldn't happen after destIndexByLabel, but guard)
             char romBuf[24];
-            formatAddr(romBuf, sDetectedAddrs[pick]);
-            String owCfg = "/onewire/sensor" + String(i) + "/address";
-            OwAddressPrewriter(owCfg, String(romBuf)).save();
-            ESP_LOGI("1Wire", "Slot %d: pre-wrote ROM %s from picker index %d", i, romBuf, pick);
-            // Reset picker to -1 (one-shot)
-            picker->set(-1);
+            formatAddr(romBuf, b.addr);
+            ESP_LOGW("1Wire", "Sensor %s: dest \"%s\" not found, treating as Not used",
+                     romBuf, destLabel.c_str());
+            continue;
         }
 
-        // --- Destination selector (existing) ---
-        String destCfg = "/onewire/sensor" + String(i) + "/dest";
-        out.owDest[i] = new PersistingObservableValue<int>(
-            DEFAULT_ONEWIRE_DEST, destCfg);
-        ConfigItem(out.owDest[i])
-            ->set_title(("Sensor " + String(i) + " dest (0=off,1=engRoom,2=exhaust,3=sea,4=outside,5=cabin,6=fridge,7=freezer,8=alt,9=oil,10=intake,11=block)").c_str());
+        if (nextSlot >= NUM_ONEWIRE_SLOTS) {
+            char romBuf[24];
+            formatAddr(romBuf, b.addr);
+            ESP_LOGW("1Wire", "Sensor %s: all %d slots in use, skipping",
+                     romBuf, NUM_ONEWIRE_SLOTS);
+            continue;
+        }
+
+        // Pre-write ROM address to the OWT config path for this slot
+        char romColon[24];
+        formatAddr(romColon, b.addr);
+        String owCfg = "/onewire/sensor" + String(nextSlot) + "/address";
+        OwAddressPrewriter(owCfg, String(romColon)).save();
+
+        b.slot = nextSlot;
+        out.owDest[nextSlot] = destIdx;
+
+        ESP_LOGI("1Wire", "Slot %d ← %s → %s (idx %d)",
+                 nextSlot, romColon, kTempDests[destIdx].label, destIdx);
+        nextSlot++;
     }
 
-    // ---- Step 3: create DallasTemperatureSensors (scans bus again) ----
+    ESP_LOGI("1Wire", "Assigned %d of %d detected sensors to slots",
+             nextSlot, sDetectedAddrs.size());
+
+    // ---- Step 5: create DallasTemperatureSensors ----
     auto* dts = new DallasTemperatureSensors(HALMET_PIN_1WIRE);
 
-    // ---- Step 4: create OneWireTemperature + SK outputs per slot ----
+    // ---- Step 6: create OWT + SK outputs per assigned slot ----
     for (int i = 0; i < NUM_ONEWIRE_SLOTS; i++) {
+        if (out.owDest[i] <= 0) {
+            out.owSensors[i] = nullptr;
+            continue;
+        }
+
         String owCfg = "/onewire/sensor" + String(i) + "/address";
         out.owSensors[i] = new OneWireTemperature(dts, INTERVAL_1WIRE_MS, owCfg.c_str());
 
-        // SK output path depends on configured destination
-        int dest = out.owDest[i]->get();
+        int dest = out.owDest[i];
         String skPath;
         if (dest > 0 && dest < kNumTempDests && kTempDests[dest].skPath) {
-            skPath = String(kTempDests[dest].skPath) + "." + String(i);
+            skPath = kTempDests[dest].skPath;
         } else {
             skPath = "environment.inside.temperature." + String(i);
         }
@@ -172,50 +259,54 @@ void init(Outputs& out) {
         out.owSensors[i]->connect_to(skOutput);
     }
 
-    // ---- Step 5: periodic SK diagnostic output (17a) ----
+    // ---- Step 7: periodic description updater + SK diagnostics ----
     auto* skDiag = new SKOutputRawJson(
         "design.halmet.diagnostics.onewireSensors", "");
 
-    // Capture pointers with static lifetime for the lambda
-    auto* destArr = out.owDest;
     auto* sensorArr = out.owSensors;
+    auto* destArr = out.owDest;
 
-    event_loop()->onRepeat(INTERVAL_ONEWIRE_DIAG_MS, [skDiag, destArr, sensorArr]() {
+    event_loop()->onRepeat(INTERVAL_ONEWIRE_DIAG_MS, [skDiag, sensorArr, destArr]() {
         JsonDocument doc;
+        JsonArray sensors = doc["sensors"].to<JsonArray>();
 
-        // Detected addresses
-        JsonArray detected = doc["detected"].to<JsonArray>();
-        for (size_t i = 0; i < sDetectedAddrs.size(); i++) {
-            char buf[24];
-            formatAddr(buf, sDetectedAddrs[i]);
-            detected.add(String(buf));
-        }
+        for (auto& b : sBindings) {
+            JsonObject obj = sensors.add<JsonObject>();
+            char romBuf[24];
+            formatAddr(romBuf, b.addr);
+            obj["address"] = String(romBuf);
 
-        // Slot bindings
-        JsonArray slots = doc["slots"].to<JsonArray>();
-        for (int i = 0; i < NUM_ONEWIRE_SLOTS; i++) {
-            JsonObject slot = slots.add<JsonObject>();
-            slot["index"] = i;
+            String destLabel = b.pov->get();
+            obj["dest"] = destLabel;
+            obj["slot"] = b.slot;
 
-            // Get the OWT's persisted address by serializing its config
-            JsonDocument addrDoc;
-            JsonObject addrObj = addrDoc.to<JsonObject>();
-            if (sensorArr[i]->to_json(addrObj) && addrObj["address"].is<const char*>()) {
-                slot["address"] = addrObj["address"].as<String>();
-            } else {
-                slot["address"] = "unknown";
+            // Update config card description with live temp
+            String desc;
+            if (b.slot >= 0 && b.slot < NUM_ONEWIRE_SLOTS && sensorArr[b.slot]) {
+                float tempK = sensorArr[b.slot]->get();
+                if (!isnan(tempK) && tempK > 0) {
+                    float tempC = tempK - 273.15f;
+                    obj["tempK"] = serialized(String(tempK, 1));
+                    desc = "Currently: " + String(tempC, 1) + " °C";
+                    if (destLabel != kTempDests[0].label) {
+                        desc += String(" — ") + destLabel;
+                    }
+                } else {
+                    desc = "Waiting for reading";
+                    if (destLabel != kTempDests[0].label) {
+                        desc += String(" — ") + destLabel;
+                    }
+                }
+            } else if (b.slot < 0) {
+                int destIdx = destIndexByLabel(destLabel);
+                if (destIdx == 0) {
+                    desc = "Not assigned";
+                } else {
+                    desc = "Not assigned (all slots in use)";
+                }
             }
-
-            int destIdx = destArr[i]->get();
-            if (destIdx >= 0 && destIdx < kNumTempDests) {
-                slot["dest"] = kTempDests[destIdx].label;
-            } else {
-                slot["dest"] = "unknown";
-            }
-
-            float tempK = sensorArr[i]->get();
-            if (!isnan(tempK) && tempK > 0) {
-                slot["tempK"] = serialized(String(tempK, 1));
+            if (b.configItem) {
+                b.configItem->set_description(desc);
             }
         }
 

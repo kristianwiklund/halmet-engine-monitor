@@ -6,10 +6,6 @@
 
 #include "halmet_config.h"
 
-namespace sensesp {
-template <typename T> class PersistingObservableValue;
-}
-
 namespace sensesp::onewire {
 class OneWireTemperature;
 }
@@ -26,7 +22,7 @@ extern const int kNumTempDests;
 namespace onewire_setup {
 
 struct Outputs {
-    sensesp::PersistingObservableValue<int>* owDest[NUM_ONEWIRE_SLOTS];
+    int                                      owDest[NUM_ONEWIRE_SLOTS];
     sensesp::onewire::OneWireTemperature*    owSensors[NUM_ONEWIRE_SLOTS];
 };
 

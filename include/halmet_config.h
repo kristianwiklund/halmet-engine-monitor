@@ -133,7 +133,6 @@
 //  1-Wire → N2K/SK temperature source assignment
 // ----------------------------------------------------------
 #define NUM_ONEWIRE_SLOTS           6
-#define DEFAULT_ONEWIRE_DEST        1       // index into kTempDests (1 = Engine room)
 #define INTERVAL_ONEWIRE_N2K_MS     10000   // match 1-Wire read interval
 
 // ----------------------------------------------------------

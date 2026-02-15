@@ -26,7 +26,7 @@ void init(const InitParams& p) {
     EngineState*                       st         = p.state;
     tNMEA2000*                         nmea       = p.nmea2000;
     PersistingObservableValue<float>*  povTankCap  = p.tankCapacityL;
-    PersistingObservableValue<int>**   owDest      = p.owDest;
+    int*                               owDest      = p.owDest;
     OneWireTemperature**               owSensors   = p.owSensors;
 
     // N2K slow PGNs: PGN 127489 + PGN 127505 (1 s)
@@ -46,9 +46,8 @@ void init(const InitParams& p) {
     // 1-Wire → N2K PGN 130316 (10 s, matching 1-Wire read interval)
     event_loop()->onRepeat(INTERVAL_ONEWIRE_N2K_MS, [nmea, owDest, owSensors]() {
         for (int i = 0; i < NUM_ONEWIRE_SLOTS; i++) {
-            if (!owDest[i] || !owSensors[i]) continue;
-            int dest = owDest[i]->get();
-            if (dest <= 0 || dest >= kNumTempDests) continue;
+            int dest = owDest[i];
+            if (dest <= 0 || dest >= kNumTempDests || !owSensors[i]) continue;
             int n2kSrc = kTempDests[dest].n2kSource;
             if (n2kSrc < 0) continue;
             float tempK = owSensors[i]->get();
