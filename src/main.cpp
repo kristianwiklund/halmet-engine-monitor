@@ -176,7 +176,7 @@ void setup() {
     });
 
     // --- 1-Wire setup ---
-    onewire_setup::Outputs owOut = {};
+    static onewire_setup::Outputs owOut = {};
     onewire_setup::init(owOut);
 
     // --- Module init (callback registration order preserved) ---
