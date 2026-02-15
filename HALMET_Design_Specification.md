@@ -349,27 +349,45 @@ All items implemented and verified on hardware (commit `0af9730`).
 |---|---------|--------|
 | 8b | Configurable 1-Wire → N2K/SK destination per sensor slot (6 slots, 10 destinations, web UI config, PGN 130316 send) | Done |
 
-### Sprint 3 — OTA & Robustness (NEXT)
+### Sprint 3 — 1-Wire Completeness & Relay Safety (NEXT)
 
 | # | Feature | Description | Complexity |
 |---|---------|-------------|------------|
 | 9 | Safe relay state before OTA | Force bilge fan relay OFF when OTA begins. Without this, relay freezes in current state for 30–90 s during firmware write | Low |
-| 10 | Firmware version in N2K product info | Pass `FW_VERSION_STR` (from Sprint 2 item 8) to `SetProductInformation()`. MFD shows installed version after OTA | Low |
-| 11 | Engine hours counter | Persist accumulated runtime seconds to LittleFS in 1-minute increments. Send in PGN 127489 `EngineTotalHours` field. Low complexity, high long-term value for service tracking | Low |
-| 12 | Hardware watchdog | Register ESP32 task watchdog with ~8 s timeout; reset in `loop()`. Now safe: OTA path is instrumented (item 9), recovery is verified | Low |
+| 10 | Firmware version in N2K product info | Pass `FW_VERSION_STR` to `SetProductInformation()`. MFD shows installed version after OTA | Low |
+| 15 | Add `propulsion.0.intakeManifoldTemperature` to 1-Wire destination list | Append row to `kTempDests[]`; SK-only (no standard N2K temp source) | Low |
+| 16 | Add `propulsion.0.engineBlockTemperature` to 1-Wire destination list | Custom SK path for sensor taped between cylinders — distinct from Penta coolant sender on A1. Append only | Low |
 
-### Future — Architecture
+**Note:** Items 15 and 16 must **append** to `kTempDests[]` — inserting would silently remap all persisted sensor configs.
 
-Trigger this sprint when `main.cpp` crosses ~500 lines or adding a new sensor requires touching more than two files.
+### Sprint 4 — Architecture Refactor
+
+`main.cpp` is at ~493 lines — the 500-line threshold is effectively reached. Refactor before adding medium+ complexity features.
 
 | # | Feature | Description | Complexity |
 |---|---------|-------------|------------|
 | 13 | Shared state struct | Replace scattered `static` globals with a single `EngineState` struct. Required before the module split so all modules can read/write shared data without cross-including each other | Low |
 | 14 | Decompose monolithic setup() | Split `main.cpp` into focused modules (analog_inputs, digital_alarms, engine_state, n2k_publisher, diagnostics). Each module exposes an `init()` function that registers its own event-loop callbacks | Medium |
 
-### Candidate Pool
+### Sprint 5 — OTA Robustness & Watchdog
 
-Features evaluated but not prioritised for the current boat. May be revisited for other installations or if requirements change.
+Depends on Sprint 3 item 9 (relay safety) being verified on hardware before item 12 is merged.
+
+| # | Feature | Description | Complexity |
+|---|---------|-------------|------------|
+| 12 | Hardware watchdog | Register ESP32 task watchdog (~8 s timeout); reset in `loop()` and inside analog callback after I2C reads. Must deregister from TWDT during OTA (`esp_task_wdt_delete`), not just reset — OTA blocks `loop()` for 30–90 s | Low |
+
+### Sprint 6 — ROM-Based 1-Wire Sensor Selection
+
+Benefits from clean module structure (Sprint 4). Consider splitting into 17a (low: publish discovered ROM addresses as read-only SK JSON output) and 17b (high: dropdown UI in web config).
+
+| # | Feature | Description | Complexity |
+|---|---------|-------------|------------|
+| 17 | Improve 1-Wire sensor selection: list detected sensors by ROM address (+ live value) instead of slot index | Current slot-based model doesn't reflect 1-Wire parallel bus topology; users should pick from discovered addresses | Medium–High |
+
+### Candidate Pool — FROZEN (do not pick up unless explicitly ordered)
+
+Features evaluated and deliberately deferred. Do **not** schedule, implement, or re-evaluate these without a direct instruction from the project owner.
 
 | Feature | Reason deferred |
 |---------|----------------|
@@ -377,7 +395,5 @@ Features evaluated but not prioritised for the current boat. May be revisited fo
 | Battery voltage on A4 (PGN 127508) | Victron equipment already provides battery monitoring on the N2K bus |
 | Configurable N2K engine instance | Single engine on the bus; no conflict risk with current installation |
 | Runtime-configurable temp curve | High complexity, low value for single-boat install. Compile-time `TEMP_CURVE_POINTS` in `halmet_config.h` is easy to edit and reflash. Risk of malformed runtime config producing silently wrong temperatures |
-| Add `propulsion.0.intakeManifoldTemperature` to 1-Wire destination list | Useful if intake manifold probe is added; low effort to include in `kTempDests[]` |
-| Add `propulsion.0.engineBlockTemperature` to 1-Wire destination list (custom SK path) | Non-standard SK path for a sensor taped between cylinders — distinct from Penta coolant sender on A1 |
-| Improve 1-Wire sensor selection: list detected sensors by ROM address (+ live value) instead of slot index | Current slot-based model doesn't reflect 1-Wire parallel bus topology; users should pick from discovered addresses |
+| Engine hours counter | Persist accumulated runtime seconds to LittleFS in 1-minute increments. Send in PGN 127489 `EngineTotalHours`. Deferred — low priority for current usage pattern |
 | I2C LCD display (2×16 ASCII) showing engine temp, RPM, voltage (from N2K bus), configurable via web UI | Requires I2C display driver, N2K bus listener for voltage PGN, web UI config for display layout |
