@@ -56,6 +56,12 @@ void BilgeFan::update(bool engineRunning, float purgeDurationSec) {
     }
 }
 
+void BilgeFan::forceOff() {
+    setRelay(false);
+    _state    = FanState::IDLE;
+    _timerSec = 0.0f;
+}
+
 void BilgeFan::setRelay(bool on) {
     if (on == _relayOn) return;   // No change — skip digitalWrite + callback
     _relayOn = on;

@@ -231,6 +231,8 @@ Each of the 6 DS18B20 sensor slots has a web-UI-configurable destination that de
 | 7 | Freezer | `N2kts_FreezerTemperature` (13) | `environment.inside.freezer.temperature.{i}` |
 | 8 | Alternator (SK only) | — (no N2K) | `electrical.alternators.0.temperature.{i}` |
 | 9 | Oil sump (SK only) | — (no N2K) | `propulsion.0.oilTemperature.{i}` |
+| 10 | Intake manifold (SK only) | — (no N2K) | `propulsion.0.intakeManifoldTemperature.{i}` |
+| 11 | Engine block (SK only) | — (no N2K) | `propulsion.0.engineBlockTemperature.{i}` |
 
 Destinations with `n2kSource = -1` (indices 0, 8, 9) emit to Signal K only. All other destinations send on both N2K (PGN 130316) and Signal K. The `{i}` suffix is the sensor slot index (0–5).
 
@@ -349,16 +351,14 @@ All items implemented and verified on hardware (commit `0af9730`).
 |---|---------|--------|
 | 8b | Configurable 1-Wire → N2K/SK destination per sensor slot (6 slots, 10 destinations, web UI config, PGN 130316 send) | Done |
 
-### Sprint 3 — 1-Wire Completeness & Relay Safety (NEXT)
+### Sprint 3 — 1-Wire Completeness & Relay Safety (COMPLETE)
 
-| # | Feature | Description | Complexity |
-|---|---------|-------------|------------|
-| 9 | Safe relay state before OTA | Force bilge fan relay OFF when OTA begins. Without this, relay freezes in current state for 30–90 s during firmware write | Low |
-| 10 | Firmware version in N2K product info | Pass `FW_VERSION_STR` to `SetProductInformation()`. MFD shows installed version after OTA | Low |
-| 15 | Add `propulsion.0.intakeManifoldTemperature` to 1-Wire destination list | Append row to `kTempDests[]`; SK-only (no standard N2K temp source) | Low |
-| 16 | Add `propulsion.0.engineBlockTemperature` to 1-Wire destination list | Custom SK path for sensor taped between cylinders — distinct from Penta coolant sender on A1. Append only | Low |
-
-**Note:** Items 15 and 16 must **append** to `kTempDests[]` — inserting would silently remap all persisted sensor configs.
+| # | Feature | Status |
+|---|---------|--------|
+| 9 | Safe relay state before OTA (ArduinoOTA.onStart → forceOff relay) | Done |
+| 10 | Firmware version in N2K product info (`FW_VERSION_STR` → `SetProductInformation()`) | Done |
+| 15 | Add `propulsion.0.intakeManifoldTemperature` to 1-Wire destination list (index 10) | Done |
+| 16 | Add `propulsion.0.engineBlockTemperature` to 1-Wire destination list (index 11) | Done |
 
 ### Sprint 4 — Architecture Refactor
 

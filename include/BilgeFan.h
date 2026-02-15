@@ -43,6 +43,10 @@ public:
     FanState state()    const { return _state; }
     bool     relayOn()  const { return _relayOn; }
 
+    /// Force relay OFF immediately and reset to IDLE.
+    /// Used before OTA to prevent relay freezing during firmware write.
+    void forceOff();
+
     /// Register a callback invoked whenever relay state changes.
     void onRelayChange(std::function<void(bool)> cb) { _onChange = cb; }
 

@@ -42,6 +42,7 @@
 #include <sensesp/signalk/signalk_output.h>
 
 // --- NMEA 2000 ---
+#include <ArduinoOTA.h>
 #include <NMEA2000_esp32.h>
 #include <N2kMessages.h>
 
@@ -173,6 +174,8 @@ static const TempDestination kTempDests[] = {
     /*7*/  {"Freezer",                 13,  "environment.inside.freezer.temperature"},
     /*8*/  {"Alternator (SK only)",    -1,  "electrical.alternators.0.temperature"},
     /*9*/  {"Oil sump (SK only)",      -1,  "propulsion.0.oilTemperature"},
+    /*10*/ {"Intake manifold (SK)",    -1,  "propulsion.0.intakeManifoldTemperature"},
+    /*11*/ {"Engine block (SK)",       -1,  "propulsion.0.engineBlockTemperature"},
 };
 static constexpr int kNumTempDests = sizeof(kTempDests) / sizeof(TempDestination);
 
@@ -198,7 +201,7 @@ static enum { COOLANT_NORMAL, COOLANT_WARN, COOLANT_ALARM } gCoolantAlertState =
 // ============================================================
 static void setupNmea2000() {
     gNmea2000.SetProductInformation(N2K_DEVICE_SERIAL, 100, N2K_MODEL_ID,
-                                    "1.0.0", "1.0.0");
+                                    FW_VERSION_STR, "1.0.0");
     gNmea2000.SetDeviceInformation(123456789UL, 160, 25, 2046);
     gNmea2000.SetMode(tNMEA2000::N2km_NodeOnly, 23);
     gNmea2000.EnableForward(false);
@@ -295,6 +298,17 @@ void setup() {
     gSkCoolantNotification = new SKOutputRawJson(
         "notifications.propulsion.0.coolantTemperature", "");
 
+    // --- OTA safety: force relay OFF before firmware write begins ---
+    // Deferred so it runs after SensESP's OTA handler (if ever enabled).
+    // ArduinoOTA stores a single onStart pointer — this replaces SensESP's
+    // log-only handler, which is an acceptable trade-off for relay safety.
+    event_loop()->onDelay(0, []() {
+        ArduinoOTA.onStart([]() {
+            gBilgeFan.forceOff();
+            ESP_LOGW("HALMET", "OTA starting — relay forced OFF");
+        });
+    });
+
     // Relay state change callback → Signal K
     gBilgeFan.onRelayChange([](bool on) {
         if (gSkFanState) gSkFanState->set(on);
@@ -311,7 +325,7 @@ void setup() {
         gOwDest[i] = new PersistingObservableValue<int>(
             DEFAULT_ONEWIRE_DEST, destCfg);
         ConfigItem(gOwDest[i])
-            ->set_title(("Sensor " + String(i) + " dest (0=off,1=engRoom,2=exhaust,3=sea,4=outside,5=cabin,6=fridge,7=freezer,8=alt,9=oil)").c_str());
+            ->set_title(("Sensor " + String(i) + " dest (0=off,1=engRoom,2=exhaust,3=sea,4=outside,5=cabin,6=fridge,7=freezer,8=alt,9=oil,10=intake,11=block)").c_str());
 
         // OneWireTemperature reads in Kelvin; ROM address auto-discovered, configurable via web UI
         String owCfg = "/onewire/sensor" + String(i) + "/address";
