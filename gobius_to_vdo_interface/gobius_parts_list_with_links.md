@@ -10,7 +10,7 @@ This list contains the specific components required to build the resistive inter
 | :--- | :--- | :--- |
 | **Optocoupler Board** | PC817 4-Channel Isolation Board (Low-Level Trigger) | [View on AliExpress](https://www.aliexpress.com/wholesale?SearchText=4+channel+PC817+optocoupler+board&aff_id=47839057dfhsp) |
 | **Resistor Kit** | 0.5W (1/2 Watt) Metal Film, 1% Tolerance | [View on AliExpress](https://www.aliexpress.com/wholesale?SearchText=0.5W+metal+film+resistor+kit+1%25&aff_id=47839057dfhsp) |
-| **Dashboard LED** | 12V Waterproof Indicator (Chrome Bezel, Red) | [View on AliExpress](https://www.aliexpress.com/wholesale?SearchText=12V+waterproof+LED+indicator+chrome&aff_id=47839057dfhsp) |
+| **Dashboard LED** | 12V Waterproof Indicator (Chrome Bezel, Red) | [View on AliExpress](https://s.click.aliexpress.com/e/_c3m2TAkX) |
 | **Cable Glands** | PG7 Nylon Waterproof Connectors (Black or White) | [View on AliExpress](https://www.aliexpress.com/wholesale?SearchText=PG7+cable+glands+nylon&aff_id=47839057dfhsp) |
 
 ## 2. Hardware & Enclosure (Amazon)
