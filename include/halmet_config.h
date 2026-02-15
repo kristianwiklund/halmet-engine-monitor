@@ -145,3 +145,4 @@
 #define INTERVAL_RPM_MS                 100     // RPM counter update
 #define INTERVAL_FAN_MS                 1000    // Fan state machine tick
 #define INTERVAL_DIAG_MS                10000   // Diagnostics heartbeat
+#define INTERVAL_ONEWIRE_DIAG_MS        10000   // 1-Wire sensor list to SK
