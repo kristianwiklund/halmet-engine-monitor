@@ -153,6 +153,37 @@ static SKOutputBool* gSkIgnState = nullptr;
 static SKOutputRawJson* gSkCoolantNotification = nullptr;
 
 // ============================================================
+//  1-Wire → N2K/SK temperature destination lookup table
+// ============================================================
+struct TempDestination {
+    const char* label;     // web UI display name
+    int         n2kSource; // tN2kTempSource enum, or -1 for SK-only / disabled
+    const char* skPath;    // SK path, or nullptr for raw sensor index
+};
+
+static const TempDestination kTempDests[] = {
+//  config  label                     n2k   SK path
+    /*0*/  {"Disabled (raw SK)",       -1,  nullptr},
+    /*1*/  {"Engine room",              3,  "environment.inside.engineRoom.temperature"},
+    /*2*/  {"Exhaust gas",             14,  "propulsion.0.exhaustTemperature"},
+    /*3*/  {"Sea water",                0,  "environment.water.temperature"},
+    /*4*/  {"Outside air",              1,  "environment.outside.temperature"},
+    /*5*/  {"Inside / cabin",           2,  "environment.inside.temperature"},
+    /*6*/  {"Refrigeration",            7,  "environment.inside.refrigerator.temperature"},
+    /*7*/  {"Freezer",                 13,  "environment.inside.freezer.temperature"},
+    /*8*/  {"Alternator (SK only)",    -1,  "electrical.alternators.0.temperature"},
+    /*9*/  {"Oil sump (SK only)",      -1,  "propulsion.0.oilTemperature"},
+};
+static constexpr int kNumTempDests = sizeof(kTempDests) / sizeof(TempDestination);
+
+// ============================================================
+//  1-Wire sensor/config/output arrays
+// ============================================================
+static OneWireTemperature*             gOwSensors[NUM_ONEWIRE_SLOTS]  = {};
+static PersistingObservableValue<int>* gOwDest[NUM_ONEWIRE_SLOTS]     = {};
+static SKOutputFloat*                  gOwSkOutput[NUM_ONEWIRE_SLOTS] = {};
+
+// ============================================================
 //  Diagnostics counters
 // ============================================================
 static uint32_t gAdsFailCount = 0;
@@ -271,18 +302,31 @@ void setup() {
     });
 
     // --- DS18B20 1-Wire via SensESP/OneWire ---
-    // DallasTemperatureSensors discovers all sensors on the bus at init.
-    // Each OneWireTemperature is a SensESP producer; the web UI allows
-    // mapping physical sensor ROM addresses to logical slots.
+    // Each slot gets a configurable destination (N2K+SK, SK-only, or raw).
+    // Changing the destination in the web UI requires a reboot.
     auto* dts = new DallasTemperatureSensors(HALMET_PIN_1WIRE);
-    for (int i = 0; i < 6; i++) {
-        String cfg = "/onewire/sensor" + String(i);
-        String sk  = "environment.inside.engineRoom.temperature." + String(i);
-        // OneWireTemperature outputs temperature in Kelvin
-        auto* ow = new OneWireTemperature(dts, INTERVAL_1WIRE_MS, cfg.c_str());
-        ow->connect_to(new SKOutputFloat(sk));
-        // N2K PGN 130316 is sent from the polling event below using
-        // the raw K value; for simplicity we re-poll the bus there.
+    for (int i = 0; i < NUM_ONEWIRE_SLOTS; i++) {
+        // Configurable destination per sensor slot
+        String destCfg = "/onewire/sensor" + String(i) + "/dest";
+        gOwDest[i] = new PersistingObservableValue<int>(
+            DEFAULT_ONEWIRE_DEST, destCfg);
+        ConfigItem(gOwDest[i])
+            ->set_title(("Sensor " + String(i) + " dest (0=off,1=engRoom,2=exhaust,3=sea,4=outside,5=cabin,6=fridge,7=freezer,8=alt,9=oil)").c_str());
+
+        // OneWireTemperature reads in Kelvin; ROM address auto-discovered, configurable via web UI
+        String owCfg = "/onewire/sensor" + String(i) + "/address";
+        gOwSensors[i] = new OneWireTemperature(dts, INTERVAL_1WIRE_MS, owCfg.c_str());
+
+        // SK output — path depends on configured destination
+        int dest = gOwDest[i]->get();
+        String skPath;
+        if (dest > 0 && dest < kNumTempDests && kTempDests[dest].skPath) {
+            skPath = String(kTempDests[dest].skPath) + "." + String(i);
+        } else {
+            skPath = "environment.inside.temperature." + String(i);
+        }
+        gOwSkOutput[i] = new SKOutputFloat(skPath);
+        gOwSensors[i]->connect_to(gOwSkOutput[i]);
     }
 
     // -----------------------------------------------------------------------
@@ -388,6 +432,23 @@ void setup() {
                                       gOilAlarm, gTempAlarm);
         N2kSenders::sendFluidLevel(gNmea2000, 0, N2kft_Fuel,
                                    gTankLevelPct, gTankCapacityL->get());
+    });
+
+    // 1-Wire → N2K PGN 130316 (10 s, matching 1-Wire read interval)
+    event_loop()->onRepeat(INTERVAL_ONEWIRE_N2K_MS, []() {
+        for (int i = 0; i < NUM_ONEWIRE_SLOTS; i++) {
+            if (!gOwDest[i] || !gOwSensors[i]) continue;
+            int dest = gOwDest[i]->get();
+            if (dest <= 0 || dest >= kNumTempDests) continue;
+            int n2kSrc = kTempDests[dest].n2kSource;
+            if (n2kSrc < 0) continue;  // SK-only destination, no N2K
+            float tempK = gOwSensors[i]->get();
+            if (std::isnan(tempK) || tempK <= 0) continue;
+            N2kSenders::sendTemperatureExtended(
+                gNmea2000, i,
+                static_cast<tN2kTempSource>(n2kSrc),
+                tempK);
+        }
     });
 
     // Bilge fan state machine tick (1 s)

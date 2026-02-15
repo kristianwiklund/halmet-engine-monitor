@@ -47,7 +47,7 @@ The board does **not** have a relay output on-board. A small relay module must b
 
 ### 2.3 1-Wire Bus (GPIO 4)
 
-Used for DS18B20 temperature probes scattered across the engine room. Up to ~10 sensors on a single parasitic or powered bus.
+Used for DS18B20 temperature probes scattered across the engine room. Up to ~10 sensors on a single parasitic or powered bus. Six sensor slots are supported, each with a web-UI-configurable destination that controls which N2K temperature source and Signal K path the reading is sent to (see §4.5).
 
 ### 2.4 I²C Bus (GPIO 21/22)
 
@@ -194,7 +194,7 @@ All data that fits within standard NMEA 2000 PGNs is sent exclusively via NMEA 2
 | Oil pressure warning | PGN 127489 field: Status1 bit "Low Oil Pressure" | N2K primary |
 | Temperature warning | PGN 127489 field: Status1 bit "Over Temperature" | N2K primary |
 | Coolant temperature | PGN 127489 field: Engine Temperature | N2K primary |
-| Engine room temperatures (1-Wire) | PGN 130316 (Temperature Extended Range) | N2K primary |
+| 1-Wire temperatures (configurable) | PGN 130316 (Temperature Extended Range) | N2K + SK (destination-dependent, see §4.5) |
 | Tank level threshold (Gobius) | PGN 127505 (Fluid Level) | N2K primary |
 | Bilge fan state | No standard N2K PGN → Signal K key `electrical.switches.bilgeFan.state` | WiFi / Signal K WS |
 | Ignition key state (optional) | No standard PGN → Signal K key `electrical.switches.ignition.state` | WiFi / Signal K WS |
@@ -214,6 +214,27 @@ If engine restarts during PURGE: → RUNNING immediately, relay OFF.
 ### 4.4 NMEA 2000 PGN Strategy
 
 See §4.2 table above.
+
+### 4.5 1-Wire Temperature Destination Assignment
+
+Each of the 6 DS18B20 sensor slots has a web-UI-configurable destination that determines both the N2K temperature source type (PGN 130316) and the Signal K path. The destination is resolved at boot from persisted config; changing it requires a reboot.
+
+| Index | Label | N2K `tN2kTempSource` | Signal K path |
+|---|---|---|---|
+| 0 | Disabled (raw SK) | — (no N2K) | `environment.inside.temperature.{i}` |
+| 1 | Engine room | `N2kts_EngineRoomTemperature` (3) | `environment.inside.engineRoom.temperature.{i}` |
+| 2 | Exhaust gas | `N2kts_ExhaustGasTemperature` (14) | `propulsion.0.exhaustTemperature.{i}` |
+| 3 | Sea water | `N2kts_SeaTemperature` (0) | `environment.water.temperature.{i}` |
+| 4 | Outside air | `N2kts_OutsideTemperature` (1) | `environment.outside.temperature.{i}` |
+| 5 | Inside / cabin | `N2kts_InsideTemperature` (2) | `environment.inside.temperature.{i}` |
+| 6 | Refrigeration | `N2kts_RefrigerationTemperature` (7) | `environment.inside.refrigerator.temperature.{i}` |
+| 7 | Freezer | `N2kts_FreezerTemperature` (13) | `environment.inside.freezer.temperature.{i}` |
+| 8 | Alternator (SK only) | — (no N2K) | `electrical.alternators.0.temperature.{i}` |
+| 9 | Oil sump (SK only) | — (no N2K) | `propulsion.0.oilTemperature.{i}` |
+
+Destinations with `n2kSource = -1` (indices 0, 8, 9) emit to Signal K only. All other destinations send on both N2K (PGN 130316) and Signal K. The `{i}` suffix is the sensor slot index (0–5).
+
+Coolant temperature is **not** part of this system — it comes from the Volvo Penta engine sender on A1 and is sent in PGN 127489.
 
 ---
 
@@ -258,6 +279,10 @@ See §4.2 table above.
 | `/bilge/purge_duration_s` | 600 s | How long to run bilge fan after engine stop |
 | `/tank/tank1_capacity_l` | 100 L | Volume of tank 1 (for PGN 127505 scaling) |
 | `/tank/tank2_capacity_l` | 100 L | Volume of tank 2 |
+| `/coolant/warn_threshold_c` | 95 °C | Coolant temperature Signal K "warn" notification |
+| `/coolant/alarm_threshold_c` | 105 °C | Coolant temperature Signal K "alarm" notification |
+| `/onewire/sensor{i}/dest` | 1 (Engine room) | 1-Wire sensor slot destination index (see §4.5) |
+| `/onewire/sensor{i}/address` | (auto) | 1-Wire sensor ROM address (auto-discovered, editable in web UI) |
 
 ---
 
@@ -318,6 +343,12 @@ All items implemented and verified on hardware (commit `0af9730`).
 | 7 | Temperature threshold alerting (configurable warn 95°C / alarm 105°C → Signal K notifications) | Done |
 | 8 | Diagnostics heartbeat (uptime, firmware version, ADS fail count, reset reason → Signal K every 10 s) | Done |
 
+### Sprint 2.5 — 1-Wire Temperature Source Assignment (COMPLETE)
+
+| # | Feature | Status |
+|---|---------|--------|
+| 8b | Configurable 1-Wire → N2K/SK destination per sensor slot (6 slots, 10 destinations, web UI config, PGN 130316 send) | Done |
+
 ### Sprint 3 — OTA & Robustness (NEXT)
 
 | # | Feature | Description | Complexity |
@@ -346,3 +377,7 @@ Features evaluated but not prioritised for the current boat. May be revisited fo
 | Battery voltage on A4 (PGN 127508) | Victron equipment already provides battery monitoring on the N2K bus |
 | Configurable N2K engine instance | Single engine on the bus; no conflict risk with current installation |
 | Runtime-configurable temp curve | High complexity, low value for single-boat install. Compile-time `TEMP_CURVE_POINTS` in `halmet_config.h` is easy to edit and reflash. Risk of malformed runtime config producing silently wrong temperatures |
+| Add `propulsion.0.intakeManifoldTemperature` to 1-Wire destination list | Useful if intake manifold probe is added; low effort to include in `kTempDests[]` |
+| Add `propulsion.0.engineBlockTemperature` to 1-Wire destination list (custom SK path) | Non-standard SK path for a sensor taped between cylinders — distinct from Penta coolant sender on A1 |
+| Improve 1-Wire sensor selection: list detected sensors by ROM address (+ live value) instead of slot index | Current slot-based model doesn't reflect 1-Wire parallel bus topology; users should pick from discovered addresses |
+| I2C LCD display (2×16 ASCII) showing engine temp, RPM, voltage (from N2K bus), configurable via web UI | Requires I2C display driver, N2K bus listener for voltage PGN, web UI config for display layout |
