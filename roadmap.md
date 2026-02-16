@@ -75,6 +75,7 @@ Inverted the config model from slot-centric (6 anonymous slots) to sensor-centri
 | # | Feature | Description | Complexity |
 |---|---------|-------------|------------|
 | 18 | Live temperature in config card description | Update each sensor's config card description with the current reading every 10 s (e.g. "Currently: 22.3 °C"). Lets user identify sensors by warming/cooling them without needing to match ROM addresses. The periodic callback and description updater already exist; needs wiring to the read cycle so unassigned sensors also show temps | Low |
+| 19 | Hot-reload sensor assignments (remove requires_restart) | Re-run slot assignment + OWT creation dynamically when a dropdown is saved, so users don't need to reboot. SensESP has a restart button in the header navbar but it's easy to miss from the config page | Medium |
 
 ## Candidate Pool — FROZEN (do not pick up unless explicitly ordered)
 

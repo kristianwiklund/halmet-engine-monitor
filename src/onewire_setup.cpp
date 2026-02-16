@@ -37,8 +37,8 @@ const TempDestination kTempDests[] = {
     /*7*/  {"Freezer",                 13,  "environment.inside.freezer.temperature"},
     /*8*/  {"Alternator (SK only)",    -1,  "electrical.alternators.0.temperature"},
     /*9*/  {"Oil sump (SK only)",      -1,  "propulsion.0.oilTemperature"},
-    /*10*/ {"Intake manifold (SK)",    -1,  "propulsion.0.intakeManifoldTemperature"},
-    /*11*/ {"Engine block (SK)",       -1,  "propulsion.0.engineBlockTemperature"},
+    /*10*/ {"Intake manifold (SK only)", -1,  "propulsion.0.intakeManifoldTemperature"},
+    /*11*/ {"Engine block (SK only)",   -1,  "propulsion.0.engineBlockTemperature"},
 };
 const int kNumTempDests = sizeof(kTempDests) / sizeof(TempDestination);
 
