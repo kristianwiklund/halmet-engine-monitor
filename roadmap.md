@@ -61,13 +61,20 @@ Depends on Sprint 3 item 9 (relay safety) being verified on hardware before item
 |---|---------|-------------|------------|
 | 12 | Hardware watchdog | Register ESP32 task watchdog (~8 s timeout); reset in `loop()` and inside analog callback after I2C reads. Must deregister from TWDT during OTA (`esp_task_wdt_delete`), not just reset — OTA blocks `loop()` for 30–90 s | Low |
 
-## Sprint 6 — ROM-Based 1-Wire Sensor Selection
+## Sprint 6 — Sensor-Centric 1-Wire Configuration (COMPLETE)
 
-Benefits from clean module structure (Sprint 4). Consider splitting into 17a (low: publish discovered ROM addresses as read-only SK JSON output) and 17b (high: dropdown UI in web config).
+Inverted the config model from slot-centric (6 anonymous slots) to sensor-centric (each detected ROM gets its own config card with dropdown destination picker).
+
+| # | Feature | Status |
+|---|---------|--------|
+| 17a | Bus scan + ROM-based diagnostics (SK JSON with address, dest, slot, tempK per sensor) | Done |
+| 17b | Sensor-centric web UI: each detected sensor gets a config card titled with its ROM address and a dropdown to pick destination | Done |
+
+## Sprint 7 — 1-Wire UX Polish
 
 | # | Feature | Description | Complexity |
 |---|---------|-------------|------------|
-| 17 | Improve 1-Wire sensor selection: list detected sensors by ROM address (+ live value) instead of slot index | Current slot-based model doesn't reflect 1-Wire parallel bus topology; users should pick from discovered addresses | Medium–High |
+| 18 | Live temperature in config card description | Update each sensor's config card description with the current reading every 10 s (e.g. "Currently: 22.3 °C"). Lets user identify sensors by warming/cooling them without needing to match ROM addresses. The periodic callback and description updater already exist; needs wiring to the read cycle so unassigned sensors also show temps | Low |
 
 ## Candidate Pool — FROZEN (do not pick up unless explicitly ordered)
 

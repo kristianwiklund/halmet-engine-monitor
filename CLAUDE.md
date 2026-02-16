@@ -35,7 +35,7 @@ Single environment: `halmet`. No test suite exists.
 - `RpmSensor` — ESP32 hardware pulse counter on D1 (alternator W-terminal). Returns RPM based on configurable pulses-per-revolution.
 - `BilgeFan` — State machine (IDLE → RUNNING → PURGE → IDLE). Drives relay on GPIO 32. Purge duration is runtime-configurable.
 - `N2kSenders` — Static helpers wrapping tNMEA2000 message construction for PGN 127488 (RPM), 127489 (engine dynamic), 127505 (fluid level), 130316 (temperature extended).
-- `OneWireSensors` — DS18B20 1-Wire temperature chain on GPIO 4, using SensESP/OneWire library.
+- `onewire_setup` — Sensor-centric 1-Wire config: scans bus at boot, creates a config card per detected ROM with dropdown destination picker, maps selected sensors to internal slots for N2K/SK output.
 - `halmet_config.h` — All compile-time defaults and pin definitions. Runtime values are persisted to LittleFS/NVS and edited via the SensESP web UI.
 
 **Data flow:** Sensor reads → shared global state variables → periodic N2K sender callbacks transmit PGNs. Signal K outputs (bilge fan state, ignition key) go over WiFi WebSocket.
@@ -59,9 +59,12 @@ Runtime parameters editable via SensESP web UI at `http://halmet-engine.local/co
 - `/rpm/running_threshold` — RPM above which engine is "running"
 - `/bilge/purge_duration_s` — bilge fan on-time after engine stop
 - `/tank/capacity_l` — tank volume for PGN 127505
+- `/onewire/<rom_hex>/dest` — destination for each detected 1-Wire sensor (dropdown: "Not used", "Engine room", etc.). Config paths are keyed by ROM address (stable across discovery order). Requires reboot after changing.
 
 ## Key Gotchas
 
 - `ConfigItem` is a **free function template** (`ConfigItem(ptr)`), not a class to `new`. It deduces the template type from the pointer.
 - OneWire classes (`DallasTemperatureSensors`, `OneWireTemperature`) are in namespace `sensesp::onewire`, not `sensesp`.
 - PlatformIO upload on Windows may hit a `UnicodeEncodeError` in progress bars. Workaround: set `PYTHONIOENCODING=utf-8`.
+- SensESP web UI dropdown schema must use `"type":"array","format":"select","uniqueItems":true` with enum inside `"items":{...}`. Plain `"type":"string","enum":[...]` renders as a text field — the frontend does NOT use jsoneditor.js, it has a custom Preact `EditControl` switch.
+- `kTempDests[]` is **APPEND ONLY** — inserting shifts persisted config. Index 0 is `"Not used"` (the default for new sensors).

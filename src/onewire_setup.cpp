@@ -101,14 +101,14 @@ static void scanBus() {
 //  Build dropdown JSON schema from kTempDests[].label
 // ============================================================
 static String buildDropdownSchema() {
-    String schema = R"({"type":"object","properties":{"value":{"title":"Destination","type":"string","enum":[)";
+    String schema = R"({"type":"object","properties":{"value":{"title":"Destination","type":"array","format":"select","uniqueItems":true,"items":{"type":"string","enum":[)";
     for (int i = 0; i < kNumTempDests; i++) {
         if (i > 0) schema += ",";
         schema += "\"";
         schema += kTempDests[i].label;
         schema += "\"";
     }
-    schema += "]}}}";
+    schema += "]}}}}";  // closes: enum[], items{}, value{}, properties{}, root{}
     return schema;
 }
 
