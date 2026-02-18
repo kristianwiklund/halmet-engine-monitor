@@ -1,3 +1,8 @@
+# Disclaimer
+
+Completely untested, and 99% was written by Claude - I will do more work on this including QA
+once spring arrives and it is possible to do work in the actual boat again.
+
 # HALMET Marine Engine & Tank Monitor
 
 Firmware for the [Hat Labs HALMET](https://docs.hatlabs.fi/halmet/) board,
