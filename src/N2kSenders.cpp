@@ -31,8 +31,8 @@ void sendEngineDynamic(tNMEA2000& nmea2000,
                        double     alternatorVoltage) {
 
     tN2kMsg msg;
-    tN2kEngineDiscreteStatus1 status1;
-    tN2kEngineDiscreteStatus2 status2;
+    tN2kEngineDiscreteStatus1 status1 = {};
+    tN2kEngineDiscreteStatus2 status2 = {};
 
     status1.Bits.LowOilPressure   = oilPressureLow    ? 1 : 0;
     status1.Bits.OverTemperature  = overTemperature    ? 1 : 0;

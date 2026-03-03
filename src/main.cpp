@@ -32,6 +32,7 @@
 // --- NMEA 2000 ---
 #include <ArduinoOTA.h>
 #include <NMEA2000_esp32.h>
+#include <Preferences.h>
 
 // --- Adafruit ADS1115 ---
 #include <Adafruit_ADS1X15.h>
@@ -68,11 +69,38 @@ static EngineState gState;
 //  NMEA 2000 setup
 // ============================================================
 static void setupNmea2000() {
+    // Derive a unique 21-bit device number from the chip's MAC address.
+    // The N2K uniqueNumber field is 21 bits wide (max 2,097,151); passing a
+    // larger value causes silent truncation in the library.
+    uint32_t uniqueNum = (uint32_t)(ESP.getEfuseMac() & 0x1FFFFFUL);
+
+    // Restore the last address claimed on this bus so we don't restart address
+    // negotiation from scratch on every reboot (N2K standard requirement).
+    Preferences prefs;
+    prefs.begin("n2k", /*readOnly=*/true);
+    uint8_t savedAddr = prefs.getUChar("addr", 23);
+    prefs.end();
+
     gNmea2000.SetProductInformation(N2K_DEVICE_SERIAL, 100, N2K_MODEL_ID,
                                     FW_VERSION_STR, "1.0.0");
-    gNmea2000.SetDeviceInformation(123456789UL, 160, 25, 2046);
-    gNmea2000.SetMode(tNMEA2000::N2km_NodeOnly, 23);
+    // deviceFunction=160 (Engine Gateway), deviceClass=25 (Propulsion),
+    // manufacturerCode=999 (conventional placeholder for uncertified devices).
+    gNmea2000.SetDeviceInformation(uniqueNum, 160, 25, 999);
+    gNmea2000.SetN2kCANSendFrameBufSize(250);
+    gNmea2000.SetN2kCANReceiveFrameBufSize(250);
+    gNmea2000.SetMode(tNMEA2000::N2km_NodeOnly, savedAddr);
     gNmea2000.EnableForward(false);
+
+    // Declare transmitted PGNs so MFDs can discover this device properly.
+    static const unsigned long kTransmitPGNs[] PROGMEM = {
+        127488UL,   // Engine Rapid Update (RPM)
+        127489UL,   // Engine Dynamic Parameters (coolant temp, oil alarm)
+        127505UL,   // Fluid Level (tank)
+        130316UL,   // Temperature Extended Range (1-Wire sensors)
+        0
+    };
+    gNmea2000.ExtendTransmitMessages(kTransmitPGNs);
+
     gNmea2000.Open();
 }
 
@@ -117,7 +145,20 @@ void setup() {
     builder.set_hostname("halmet-engine")
            ->set_wifi_client(WIFI_SSID, WIFI_PASSWORD)
            ->set_sk_server(SK_SERVER_IP, SK_SERVER_PORT)
+           ->enable_ota("SomeOTAPassword")
            ->get_app();
+
+    // --- Persist N2K source address after address claiming ---
+    event_loop()->onRepeat(10000, []() {
+        if (gNmea2000.ReadResetAddressChanged()) {
+            uint8_t addr = gNmea2000.GetN2kSource();
+            Preferences prefs;
+            prefs.begin("n2k", /*readOnly=*/false);
+            prefs.putUChar("addr", addr);
+            prefs.end();
+            ESP_LOGI("HALMET", "N2K address claimed: %d (saved)", addr);
+        }
+    });
 
     // --- Configurable parameters (web UI + persisted to flash) ---
     auto* gPurgeDurationSec = new PersistingObservableValue<float>(
