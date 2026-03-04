@@ -201,7 +201,7 @@ Build system: **PlatformIO** with the **pioarduino** platform fork (required for
 
 ### 4.2 NMEA 2000 PGN Strategy
 
-All data that fits within standard NMEA 2000 PGNs is sent exclusively via NMEA 2000. WiFi/Signal K HTTP or WebSocket is used **only** for data that has no appropriate NMEA 2000 PGN.
+All data is sent via both NMEA 2000 and Signal K where applicable. Data that fits within standard NMEA 2000 PGNs is sent on the N2K bus; the same data is also available via the Signal K WebSocket. Data with no appropriate NMEA 2000 PGN (bilge fan state, ignition key) is sent via Signal K only.
 
 | Data | NMEA 2000 PGN | Signal Path |
 |---|---|---|
