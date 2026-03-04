@@ -41,8 +41,8 @@ The board does **not** have a relay output on-board. A small relay module must b
 | Input | Signal | Mode | Notes |
 |---|---|---|---|
 | A1 | Coolant/oil temperature sender | Passive voltage | In parallel with VP gauge, high-impedance |
-| A2 | Gobius Pro tank 1 — digital OUT1 | Passive voltage or resistance | See §3.3 |
-| A3 | Gobius Pro tank 2 — digital OUT1 | Passive voltage or resistance | See §3.3 |
+| A2 | Resistive tank sender (10 mA CCS) | Active resistance | VDO 10–180 Ω default; Gobius 3-band mode via `-D TANK_SENSOR_GOBIUS` build flag. CCS jumper must be installed on A2 in default mode. See §3.3. |
+| A3 | Gobius sensor B OUT1 (Gobius mode only) | Passive voltage w/ pull-up | Only used when `-D TANK_SENSOR_GOBIUS` is set. See §3.3. |
 | A4 | Spare (e.g. battery voltage sense) | Passive voltage | Optional |
 
 ### 2.3 1-Wire Bus (GPIO 4)
@@ -64,6 +64,8 @@ HALMET GND      ──→ Relay module GND
 Relay COM       ──→ 12 V (fused, 5 A)
 Relay NO        ──→ Bilge fan +12 V
 ```
+
+GPIO 33 is used as a **warning lamp output**. It goes HIGH when either the oil pressure alarm (D2) or the coolant temperature alarm (D3) is active. Connect a small indicator lamp or LED (with suitable series resistor) between GPIO 33 and GND.
 
 ### 2.6 Optional Ignition Sense (D4)
 
@@ -128,15 +130,30 @@ A CurveInterpolator in firmware maps the measured voltage to degrees Celsius usi
 
 **Temperature warning switch (to D3):** Same wiring as D2 — normally open, closes to GND on high temperature. Active-low.
 
-### 3.3 Gobius Pro Tank Sensors
+### 3.3 Tank Sensor
 
-Each Gobius Pro sensor provides **two digital outputs** (OUT1 and OUT2) that switch between open-collector GND and floating (high-impedance open), representing configurable tank level thresholds. Supply voltage for the sensors is 12–24 V.
+#### Default mode — Resistive sender on A2 (10 mA constant-current source)
 
-**Recommended approach — use the wired digital outputs, not BLE:**
+The default firmware reads a conventional resistive tank sender on A2 using the HALMET's built-in 10 mA constant-current source (CCS). Install the CCS jumper on the A2 screw terminal header. The firmware computes resistance as:
 
-Although the ESP32 has BLE, the Gobius Pro uses a proprietary BLE profile documented only for their own smartphone app. Reverse-engineering that protocol is fragile and unsupported. The wired outputs are simpler and more reliable.
+```
+R = V_adc / I     (I = 0.010 A)
+```
 
-Each Gobius Pro OUT pin can be treated as a binary level signal. For two sensors (two tanks), use two analog inputs (A2, A3) in passive voltage mode with a pull-up resistor:
+A CurveInterpolator maps resistance to level ratio (0.0–1.0). The default curve matches the **European VDO standard**: 10 Ω = empty, 180 Ω = full. The curve is runtime-configurable via the SensESP web UI — edit the calibration table to match any sender that uses a continuous resistive output.
+
+No external components are required beyond the sender wire connected directly to A2.
+
+#### Optional mode — Gobius Pro 3-band sensing (build flag)
+
+To use Gobius Pro sensors instead, build with `-D TANK_SENSOR_GOBIUS` in `platformio.ini`. In this mode:
+
+- **A2** reads the Gobius sensor A OUT1 ("below 3/4" threshold) in passive voltage mode with a 10 kΩ pull-up to +3.3 V. Remove the CCS jumper on A2.
+- **A3** reads the Gobius sensor B OUT1 ("below 1/4" threshold) in passive voltage mode with a 10 kΩ pull-up to +3.3 V.
+
+Each Gobius Pro sensor provides **two digital outputs** (OUT1 and OUT2) that switch between open-collector GND and floating (high-impedance), representing configurable level thresholds. Supply voltage for the sensors is 12–24 V (do not power from HALMET GPIO pins).
+
+**Wiring (Gobius mode only):**
 
 ```
 +3.3V (from HALMET GPIO header VCC) ──[10 kΩ]──┬── A2 (or A3)
@@ -149,9 +166,7 @@ Each Gobius Pro OUT pin can be treated as a binary level signal. For two sensors
 When the Gobius output is floating (high): A2 reads ~3.3 V → "threshold NOT reached"
 When the Gobius output sinks to GND: A2 reads 0 V → "threshold reached"
 
-Since each Gobius Pro sensor has two outputs (allowing two configurable thresholds per tank), you could use two digital inputs per sensor instead. With two sensors and using D1 for RPM, the remaining D2 and D3 are reserved for alarms — so the analog approach frees up all digital inputs for their intended purpose.
-
-**For a more continuous level reading (not just binary):** Use the Gobius Hub accessory, which provides a 10–180 Ω or 240–33 Ω resistive output — directly compatible with HALMET's active resistance measurement mode (install the A-input current source jumper, no external gauge).
+**Note on BLE:** Although the ESP32 has BLE, the Gobius Pro uses a proprietary BLE profile. The wired outputs are simpler and more reliable — use them.
 
 ### 3.4 1-Wire Temperature Sensors (Engine Room)
 
@@ -195,7 +210,10 @@ All data that fits within standard NMEA 2000 PGNs is sent exclusively via NMEA 2
 | Temperature warning | PGN 127489 field: Status1 bit "Over Temperature" | N2K primary |
 | Coolant temperature | PGN 127489 field: Engine Temperature | N2K primary |
 | 1-Wire temperatures (configurable) | PGN 130316 (Temperature Extended Range) | N2K + SK (destination-dependent, see §4.5) |
-| Tank level threshold (Gobius) | PGN 127505 (Fluid Level) | N2K primary |
+| Tank level (resistive sender, default) | PGN 127505 (Fluid Level) | N2K primary |
+| Tank level (Gobius 3-band mode) | PGN 127505 (Fluid Level) — synthesised from threshold crossings | N2K primary (build flag `-D TANK_SENSOR_GOBIUS`) |
+| Bilge fan manual control | PGN 127502 (Switch Bank Control) receive | N2K receive |
+| Bilge fan status | PGN 127501 (Binary Switch Bank Status) at 1 Hz | N2K primary |
 | Bilge fan state | No standard N2K PGN → Signal K key `electrical.switches.bilgeFan.state` | WiFi / Signal K WS |
 | Ignition key state (optional) | No standard PGN → Signal K key `electrical.switches.ignition.state` | WiFi / Signal K WS |
 
@@ -210,6 +228,8 @@ Relay is OFF in IDLE and RUNNING.
 Relay is ON in PURGE only.
 If engine restarts during PURGE: → RUNNING immediately, relay OFF.
 ```
+
+**Manual override via NMEA 2000:** The bilge fan can also be toggled on or off from an MFD by sending PGN 127502 (Switch Bank Control). The `BilgeFan` class exposes a `manualOn()` latch (`_manualOverride` flag) that activates the relay independently of the automatic purge state. The fan status is broadcast back on PGN 127501 (Binary Switch Bank Status) at 1 Hz.
 
 ### 4.4 NMEA 2000 PGN Strategy
 
@@ -249,13 +269,14 @@ Coolant temperature is **not** part of this system — it comes from the Volvo P
 | 3 | D3 | 27 | Temperature warning | Digital alarm | Active-low, NPN switch |
 | 4 | D4 | 26 | Ignition key sense | Digital input | Optional, +12V sense |
 | 5 | A1 | ADS1115 ch0 | VP coolant temp sender | Analog passive | Parallel to gauge |
-| 6 | A2 | ADS1115 ch1 | Gobius Pro tank 1 OUT | Analog w/ pull-up | Binary or resistive (Hub) |
-| 7 | A3 | ADS1115 ch2 | Gobius Pro tank 2 OUT | Analog w/ pull-up | Binary or resistive (Hub) |
+| 6 | A2 | ADS1115 ch1 | Resistive tank sender (CCS) | Active resistance | Default mode; CCS jumper installed. VDO 10–180 Ω. Gobius OUT1 in Gobius mode (build flag). |
+| 7 | A3 | ADS1115 ch2 | Gobius sensor B OUT1 | Analog w/ pull-up | Gobius mode only (`-D TANK_SENSOR_GOBIUS`). Not used in default mode. |
 | 8 | A4 | ADS1115 ch3 | Battery voltage / spare | Analog passive | Optional |
 | 9 | 1-Wire | GPIO 4 | DS18B20 chain | 1-Wire bus | Multiple sensors |
 | 10 | GPIO 32 | GPIO header | Bilge fan relay | Digital output | Via relay module |
-| 11 | N2K | CAN bus | All engine/tank data | NMEA 2000 | Primary data bus |
-| 12 | WiFi | Integrated | Fan/key state, OTA, config | TCP/IP | Supplemental only |
+| 11 | GPIO 33 | GPIO header | Warning lamp | Digital output | HIGH when oil or coolant alarm active |
+| 12 | N2K | CAN bus | All engine/tank data | NMEA 2000 | Primary data bus |
+| 13 | WiFi | Integrated | Fan/key state, OTA, config | TCP/IP | Supplemental only |
 
 ---
 
@@ -265,10 +286,11 @@ Coolant temperature is **not** part of this system — it comes from the Volvo P
 2. **Calibrate RPM** — start engine, compare HALMET RPM readout against a handheld optical tachometer. Adjust `pulses_per_revolution` until both agree. Typical starting value: 10–13.
 3. **Test alarm inputs** — with engine off, short D2 to GND momentarily to verify oil pressure alarm registers on MFD.
 4. **Calibrate temperature curve** — record voltage on A1 at known coolant temperatures (e.g. engine cold = ambient, engine warm = ~85°C per coolant gauge). Adjust CurveInterpolator points.
-5. **Test Gobius sensors** — verify OUT1 transitions with the phone app showing level crossing the configured threshold.
-6. **Test bilge fan logic** — start engine (fan should stay OFF), stop engine (fan should activate), wait `T_purge` (fan should stop). Verify fan never runs before engine starts.
-7. **Verify NMEA 2000** — open MFD or Actisense Reader; confirm PGN 127488 and 127489 appearing with correct engine instance.
-8. **Verify Signal K** — check `electrical.switches.bilgeFan.state` updating via the Signal K dashboard.
+5. **Test tank sensor** — in default (resistive) mode: fill tank to known level, verify PGN 127505 level reading against the expected value for the measured sender resistance. Adjust the CurveInterpolator calibration table in the web UI if needed. If using Gobius mode (`-D TANK_SENSOR_GOBIUS`): verify OUT1 transitions with the phone app showing level crossing the configured threshold.
+6. **Calibrate tank sender curve** (default resistive mode only) — measure sender resistance at empty and full. Open the web UI config page and edit the `/tank/curve` CurveInterpolator table to match your sender's resistance-to-level characteristic.
+7. **Test bilge fan logic** — start engine (fan should stay OFF), stop engine (fan should activate), wait `T_purge` (fan should stop). Verify fan never runs before engine starts.
+8. **Verify NMEA 2000** — open MFD or Actisense Reader; confirm PGN 127488 and 127489 appearing with correct engine instance.
+9. **Verify Signal K** — check `electrical.switches.bilgeFan.state` updating via the Signal K dashboard.
 
 ---
 
@@ -281,6 +303,7 @@ Coolant temperature is **not** part of this system — it comes from the Volvo P
 | `/bilge/purge_duration_s` | 600 s | How long to run bilge fan after engine stop |
 | `/tank/tank1_capacity_l` | 100 L | Volume of tank 1 (for PGN 127505 scaling) |
 | `/tank/tank2_capacity_l` | 100 L | Volume of tank 2 |
+| `/tank/curve` | VDO 10–180 Ω curve | Runtime-editable CurveInterpolator table in web UI. Maps sender resistance (Ω) to level ratio (0.0–1.0). Default: 10 Ω = 0.0 (empty), 180 Ω = 1.0 (full). Only active in default resistive sender mode. |
 | `/coolant/warn_threshold_c` | 95 °C | Coolant temperature Signal K "warn" notification |
 | `/coolant/alarm_threshold_c` | 105 °C | Coolant temperature Signal K "alarm" notification |
 | `/onewire/sensor{i}/dest` | 1 (Engine room) | 1-Wire sensor slot destination index (see §4.5) |
@@ -377,13 +400,28 @@ Depends on Sprint 3 item 9 (relay safety) being verified on hardware before item
 |---|---------|-------------|------------|
 | 12 | Hardware watchdog | Register ESP32 task watchdog (~8 s timeout); reset in `loop()` and inside analog callback after I2C reads. Must deregister from TWDT during OTA (`esp_task_wdt_delete`), not just reset — OTA blocks `loop()` for 30–90 s | Low |
 
-### Sprint 6 — ROM-Based 1-Wire Sensor Selection
+### Sprint 6 — ROM-Based 1-Wire Sensor Selection (COMPLETE)
 
-Benefits from clean module structure (Sprint 4). Consider splitting into 17a (low: publish discovered ROM addresses as read-only SK JSON output) and 17b (high: dropdown UI in web config).
+| # | Feature | Status |
+|---|---------|--------|
+| 17 | Improve 1-Wire sensor selection: list detected sensors by ROM address (+ live value) instead of slot index; dropdown destination picker per ROM in web UI | Done |
 
-| # | Feature | Description | Complexity |
-|---|---------|-------------|------------|
-| 17 | Improve 1-Wire sensor selection: list detected sensors by ROM address (+ live value) instead of slot index | Current slot-based model doesn't reflect 1-Wire parallel bus topology; users should pick from discovered addresses | Medium–High |
+### Sprint 8 — N2K Bilge Fan Switch & Warning Lamp (COMPLETE)
+
+| # | Feature | Status |
+|---|---------|--------|
+| 18 | N2K bilge fan switch: receive PGN 127502 (Switch Bank Control) from MFD; `BilgeFan::manualOn()` latch with `_manualOverride` guard | Done |
+| 19 | PGN 127501 (Binary Switch Bank Status) transmit at 1 Hz reporting bilge fan relay state | Done |
+| 20 | Warning lamp on GPIO 33: HIGH when oil pressure or coolant temperature alarm is active | Done |
+| 21 | PGN 127489 cleanup: removed unmeasurable fields (oil pressure value, alternator voltage); CheckEngine status bit set when any alarm is raised | Done |
+
+### Sprint 9 — Resistive Tank Sender (COMPLETE)
+
+| # | Feature | Status |
+|---|---------|--------|
+| 22 | Default tank sensor changed from Gobius 3-band to continuous resistive sender on A2 using HALMET 10 mA CCS; R = V_adc / I | Done |
+| 23 | Runtime-configurable CurveInterpolator (resistance Ω → level ratio) in web UI; default curve: VDO 10 Ω (empty) → 180 Ω (full) | Done |
+| 24 | Gobius 3-band mode retained as optional via `-D TANK_SENSOR_GOBIUS` build flag | Done |
 
 ### Candidate Pool — FROZEN (do not pick up unless explicitly ordered)
 
