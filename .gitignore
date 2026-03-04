@@ -2,6 +2,7 @@
 .pio/
 .pioenvs/
 .piolibdeps/
+input/
 
 # VSCode
 .vscode/
