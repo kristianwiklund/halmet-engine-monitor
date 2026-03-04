@@ -12,7 +12,7 @@ void sendEngineRapidUpdate(tNMEA2000& nmea2000,
                            uint8_t    engineInstance,
                            double     rpmValue) {
     tN2kMsg msg;
-    // boost pressure and trim are not available — pass NA
+    // boost pressure and trim not applicable on MD7A — pass NA
     SetN2kEngineParamRapid(msg,
                            engineInstance,
                            rpmValue,
@@ -25,38 +25,45 @@ void sendEngineRapidUpdate(tNMEA2000& nmea2000,
 void sendEngineDynamic(tNMEA2000& nmea2000,
                        uint8_t    engineInstance,
                        double     coolantTempK,
-                       double     oilPressurePa,
                        bool       oilPressureLow,
-                       bool       overTemperature,
-                       double     alternatorVoltage) {
+                       bool       overTemperature) {
 
     tN2kMsg msg;
     tN2kEngineDiscreteStatus1 status1 = {};
     tN2kEngineDiscreteStatus2 status2 = {};
 
-    status1.Bits.LowOilPressure   = oilPressureLow    ? 1 : 0;
-    status1.Bits.OverTemperature  = overTemperature    ? 1 : 0;
+    status1.Bits.LowOilPressure  = oilPressureLow                    ? 1 : 0;
+    status1.Bits.OverTemperature = overTemperature                    ? 1 : 0;
+    status1.Bits.CheckEngine     = (oilPressureLow || overTemperature) ? 1 : 0;
 
-    // Actual library signature (from N2kMessages.h:1172):
-    // (msg, instance, OilPress, OilTemp, CoolantTemp, AlternatorVoltage,
-    //  FuelRate, EngineHours, CoolantPressure, FuelPressure,
-    //  EngineLoad, EngineTorque, Status1, Status2)
-    // Note: OilTemp is a separate field from CoolantTemp.
-    //       Status structs come AFTER the two int8_t load/torque fields.
     SetN2kEngineDynamicParam(msg,
                              engineInstance,
-                             oilPressurePa,     // EngineOilPress (Pa)
-                             N2kDoubleNA,       // EngineOilTemp  (K) — not measured
-                             coolantTempK,      // EngineCoolantTemp (K)
-                             alternatorVoltage, // AlternatorVoltage (V)
-                             N2kDoubleNA,       // FuelRate (L/h)
-                             N2kDoubleNA,       // EngineHours (s)
-                             N2kDoubleNA,       // EngineCoolantPressure
-                             N2kDoubleNA,       // FuelPressure
-                             N2kInt8NA,         // EngineLoad (%)
-                             N2kInt8NA,         // EngineTorque (%)
+                             N2kDoubleNA,   // EngineOilPress  — not measurable on MD7A
+                             N2kDoubleNA,   // EngineOilTemp   — not measurable on MD7A
+                             coolantTempK,  // EngineCoolantTemp (K)
+                             N2kDoubleNA,   // AlternatorVoltage — not measurable on MD7A
+                             N2kDoubleNA,   // FuelRate
+                             N2kDoubleNA,   // EngineHours
+                             N2kDoubleNA,   // EngineCoolantPressure
+                             N2kDoubleNA,   // FuelPressure
+                             N2kInt8NA,     // EngineLoad
+                             N2kInt8NA,     // EngineTorque
                              status1,
                              status2);
+    nmea2000.SendMsg(msg);
+}
+
+// ----------------------------------------------------------
+void sendBinaryStatus(tNMEA2000& nmea2000,
+                      uint8_t    bankInstance,
+                      bool       relayOn) {
+    tN2kMsg msg;
+    tN2kBinaryStatus bankStatus;
+    N2kResetBinaryStatus(bankStatus);
+    N2kSetStatusBinaryOnStatus(bankStatus,
+                               relayOn ? N2kOnOff_On : N2kOnOff_Off,
+                               1);  // switch index 1 (1-based in library)
+    SetN2kBinaryStatus(msg, bankInstance, bankStatus);
     nmea2000.SendMsg(msg);
 }
 

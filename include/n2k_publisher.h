@@ -5,6 +5,7 @@
 // ============================================================
 
 class tNMEA2000;
+class BilgeFan;
 struct EngineState;
 struct TempDestination;
 
@@ -24,6 +25,7 @@ struct InitParams {
     sensesp::PersistingObservableValue<float>*   tankCapacityL;
     int*                                         owDest;       // array[NUM_ONEWIRE_SLOTS]
     sensesp::onewire::OneWireTemperature**       owSensors;    // array[NUM_ONEWIRE_SLOTS]
+    BilgeFan*                                    bilgeFan;
 };
 
 void init(const InitParams& p);

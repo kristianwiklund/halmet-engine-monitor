@@ -23,7 +23,7 @@ void BilgeFan::update(bool engineRunning, float purgeDurationSec) {
     switch (_state) {
         // -------------------------------------------------------
         case FanState::IDLE:
-            setRelay(false);                  // Guarantee relay is OFF
+            if (!_manualOverride) setRelay(false);   // Guarantee relay is OFF
             if (engineRunning) {
                 _state = FanState::RUNNING;
             }
@@ -31,7 +31,7 @@ void BilgeFan::update(bool engineRunning, float purgeDurationSec) {
 
         // -------------------------------------------------------
         case FanState::RUNNING:
-            setRelay(false);                  // Guarantee relay is OFF
+            if (!_manualOverride) setRelay(false);   // Guarantee relay is OFF
             if (!engineRunning) {
                 _timerSec = purgeDurationSec;
                 _state    = FanState::PURGE;
@@ -42,13 +42,15 @@ void BilgeFan::update(bool engineRunning, float purgeDurationSec) {
         case FanState::PURGE:
             if (engineRunning) {
                 // Engine restarted during purge — abort immediately
-                setRelay(false);
+                if (!_manualOverride) setRelay(false);
                 _state = FanState::RUNNING;
                 break;
             }
             setRelay(true);
             _timerSec -= dt;
             if (_timerSec <= 0.0f) {
+                // Timer expired: release manual latch and turn relay off
+                _manualOverride = false;
                 setRelay(false);
                 _state = FanState::IDLE;
             }
@@ -57,9 +59,15 @@ void BilgeFan::update(bool engineRunning, float purgeDurationSec) {
 }
 
 void BilgeFan::forceOff() {
+    _manualOverride = false;
     setRelay(false);
     _state    = FanState::IDLE;
     _timerSec = 0.0f;
+}
+
+void BilgeFan::manualOn() {
+    _manualOverride = true;
+    setRelay(true);
 }
 
 void BilgeFan::setRelay(bool on) {

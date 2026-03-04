@@ -19,6 +19,7 @@
 //    A3 / ADS ch2  → Gobius Pro sensor B OUT1 ("below 1/4" threshold)
 //    1-Wire        → DS18B20 engine-room temperature probes
 //    GPIO 32       → Bilge fan relay output
+//    GPIO 33       → Engine warning lamp (HIGH = any alarm active)
 // ============================================================
 
 #include <Arduino.h>
@@ -95,6 +96,7 @@ static void setupNmea2000() {
     static const unsigned long kTransmitPGNs[] PROGMEM = {
         127488UL,   // Engine Rapid Update (RPM)
         127489UL,   // Engine Dynamic Parameters (coolant temp, oil alarm)
+        127501UL,   // Binary Switch Bank Status (bilge fan relay)
         127505UL,   // Fluid Level (tank)
         130316UL,   // Temperature Extended Range (1-Wire sensors)
         0
@@ -114,6 +116,10 @@ void setup() {
     pinMode(HALMET_PIN_D2, INPUT_PULLUP);
     pinMode(HALMET_PIN_D3, INPUT_PULLUP);
     pinMode(HALMET_PIN_D4, INPUT_PULLUP);
+
+    // --- Warning lamp (off until first alarm read) ---
+    pinMode(HALMET_PIN_WARN_LAMP, OUTPUT);
+    digitalWrite(HALMET_PIN_WARN_LAMP, LOW);
 
     // --- RPM pulse counter ---
     gRpm.begin();
@@ -240,11 +246,12 @@ void setup() {
     digital_alarms::init(&gState);
 
     n2k_publisher::init({
-        .state        = &gState,
-        .nmea2000     = &gNmea2000,
+        .state         = &gState,
+        .nmea2000      = &gNmea2000,
         .tankCapacityL = gTankCapacityL,
-        .owDest       = owOut.owDest,
-        .owSensors    = owOut.owSensors,
+        .owDest        = owOut.owDest,
+        .owSensors     = owOut.owSensors,
+        .bilgeFan      = &gBilgeFan,
     });
 
     // Bilge fan state machine tick (1 s)

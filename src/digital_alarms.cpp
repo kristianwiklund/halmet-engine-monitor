@@ -26,6 +26,8 @@ void init(EngineState* st) {
 
         st->oilAlarm  = (__builtin_popcount(st->oilAlarmHistory)  >= ALARM_DEBOUNCE_THRESHOLD);
         st->tempAlarm = (__builtin_popcount(st->tempAlarmHistory) >= ALARM_DEBOUNCE_THRESHOLD);
+
+        digitalWrite(HALMET_PIN_WARN_LAMP, (st->oilAlarm || st->tempAlarm) ? HIGH : LOW);
     });
 }
 

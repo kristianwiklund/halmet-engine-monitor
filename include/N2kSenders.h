@@ -6,8 +6,11 @@
 //  Wraps the tNMEA2000 library calls for the PGNs used by this
 //  project.  All values follow SI units as required by N2K:
 //    Temperature  → Kelvin
-//    Pressure     → Pascal
 //    Speed/RPM    → as defined per PGN (double/rpm)
+//
+//  Fields not measurable on this engine (Volvo Penta MD7A):
+//    boost pressure, trim, oil pressure — omitted; library
+//    receives N2kDoubleNA / N2kInt8NA internally.
 // ============================================================
 
 #include <Arduino.h>
@@ -18,7 +21,7 @@ namespace N2kSenders {
 
 // ----------------------------------------------------------
 //  PGN 127488 — Engine Rapid Update  (10 Hz recommended)
-//  Sends: engine RPM, boost pressure (0 if unknown), trim
+//  Sends: engine RPM only (boost/trim not available on MD7A)
 // ----------------------------------------------------------
 void sendEngineRapidUpdate(tNMEA2000& nmea2000,
                            uint8_t    engineInstance,
@@ -26,15 +29,23 @@ void sendEngineRapidUpdate(tNMEA2000& nmea2000,
 
 // ----------------------------------------------------------
 //  PGN 127489 — Engine Dynamic Parameters  (1 Hz)
-//  Sends: oil pressure, coolant temperature, status bits
+//  Sends: coolant temperature, oil/overheat alarm status bits
+//  (oil pressure not measurable on MD7A — digital alarm only)
 // ----------------------------------------------------------
 void sendEngineDynamic(tNMEA2000& nmea2000,
                        uint8_t    engineInstance,
                        double     coolantTempK,
-                       double     oilPressurePa,   // 0 if only binary available
                        bool       oilPressureLow,
-                       bool       overTemperature,
-                       double     alternatorVoltage = N2kDoubleNA);
+                       bool       overTemperature);
+
+// ----------------------------------------------------------
+//  PGN 127501 — Binary Switch Bank Status  (1 Hz)
+//  Reports relay on/off state so MFDs stay in sync with the
+//  bilge fan.  Switch bank instance 0, switch index 1.
+// ----------------------------------------------------------
+void sendBinaryStatus(tNMEA2000& nmea2000,
+                      uint8_t    bankInstance,
+                      bool       relayOn);
 
 // ----------------------------------------------------------
 //  PGN 127505 — Fluid Level  (1 Hz)

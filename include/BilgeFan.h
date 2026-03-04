@@ -44,8 +44,14 @@ public:
     bool     relayOn()  const { return _relayOn; }
 
     /// Force relay OFF immediately and reset to IDLE.
-    /// Used before OTA to prevent relay freezing during firmware write.
+    /// Used before OTA and in response to a PGN 127502 "off" command.
+    /// Also clears any active manual override latch.
     void forceOff();
+
+    /// Latch relay ON immediately from a remote command (e.g. PGN 127502).
+    /// The latch is released by forceOff() or when a natural purge timer
+    /// expires — whichever comes first.
+    void manualOn();
 
     /// Register a callback invoked whenever relay state changes.
     void onRelayChange(std::function<void(bool)> cb) { _onChange = cb; }
@@ -55,9 +61,10 @@ private:
 
     uint8_t  _pin;
     bool     _activeHigh;
-    FanState _state     = FanState::IDLE;
-    bool     _relayOn   = false;
-    float    _timerSec  = 0.0f;
+    FanState _state          = FanState::IDLE;
+    bool     _relayOn        = false;
+    float    _timerSec       = 0.0f;
+    bool     _manualOverride = false;
 
     std::function<void(bool)> _onChange;
 };
