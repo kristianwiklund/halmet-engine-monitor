@@ -33,7 +33,7 @@ D4 / GPIO 26   ← Ignition key +12 V rail (optional)
 A1 / ADS ch0   ← VP coolant temp sender terminal (parallel to existing gauge)
 A2 / ADS ch1   ← Resistive tank sender (10 mA CCS, VDO 10–180 Ω)  — enable CCS jumper on A2
 A3 / ADS ch2   ← Gobius sensor B OUT1 (Gobius mode only, 10 kΩ pull-up to +3.3 V)
-GPIO 4         ← DS18B20 1-Wire DQ   (4.7 kΩ pull-up to +3.3 V)
+GPIO 4         ← DS18B20 1-Wire DQ   (pull-up built into HALMET)
 GPIO 32        → Bilge fan relay module IN
 GPIO 33        → Warning lamp (HIGH when oil/coolant alarm active)
 ```

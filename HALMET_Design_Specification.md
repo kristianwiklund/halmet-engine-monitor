@@ -173,11 +173,9 @@ When the Gobius output sinks to GND: A2 reads 0 V → "threshold reached"
 DS18B20 waterproof probes wired in a bus topology from the 1-Wire header (GPIO 4). Recommended wiring for long cable runs (up to ~20 m total):
 
 ```
-HALMET 1W header:  VDD ─┬─ [4.7 kΩ] ─── DQ (data)
-                        │
-                     All DS18B20 VDD pins
-                    All DS18B20 DQ pins ──── DQ
-                    All DS18B20 GND    ──── GND
+HALMET 1W header:  VDD ──── All DS18B20 VDD pins
+                   DQ  ──── All DS18B20 DQ pins  (pull-up built into HALMET)
+                   GND ──── All DS18B20 GND pins
 ```
 
 Use CAT5 cable (one pair per bus segment). Each sensor has a unique 64-bit ROM address — they self-identify in firmware without any manual configuration.
@@ -315,7 +313,7 @@ Coolant temperature is **not** part of this system — it comes from the Volvo P
 
 - Use a **waterproof ABS box at least 120×80×55 mm**.
 - Route the W-terminal cable with a 100 mA inline fuse as close to the alternator as practical.
-- Keep 1-Wire cable runs under 20 m total; use a 4.7 kΩ pull-up near the HALMET.
+- Keep 1-Wire cable runs under 20 m total; the HALMET board has a built-in pull-up on the 1-Wire header.
 - The Gobius sensors require their own 12 V supply (500 mA recommended per sensor). Do not power them from the HALMET GPIO pins.
 - Label all wiring with heat-shrink ferrule markers before final assembly.
 - The HALMET draws ~90 mA at 12 V with WiFi active — budget this from the NMEA 2000 backbone or a separate fused supply.
