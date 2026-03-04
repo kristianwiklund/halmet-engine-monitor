@@ -83,6 +83,12 @@ Inverted the config model from slot-centric (6 anonymous slots) to sensor-centri
 |---|---------|--------|
 | 20 | N2K bilge fan switch (PGN 127502 receive + PGN 127501 report) | Done |
 
+## Sprint 9 — Resistive Tank Sender (COMPLETE)
+
+| # | Feature | Status |
+|---|---------|--------|
+| 21 | Replace Gobius 3-band logic with continuous resistive sender (constant-current, CurveInterpolator, VDO 10–180 Ω default). Gobius mode retained via `-D TANK_SENSOR_GOBIUS`. | Done |
+
 ## Candidate Pool — FROZEN (do not pick up unless explicitly ordered)
 
 Features evaluated and deliberately deferred. Do **not** schedule, implement, or re-evaluate these without a direct instruction from the project owner.

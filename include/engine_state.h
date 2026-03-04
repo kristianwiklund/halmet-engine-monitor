@@ -9,7 +9,6 @@
 // ============================================================
 
 #include <cstdint>
-#include "halmet_config.h"
 
 enum class CoolantAlertState : uint8_t {
     NORMAL = 0,
@@ -21,7 +20,7 @@ struct EngineState {
     // Written by analog_inputs
     double            coolantK            = -1e9;   // N2kDoubleNA sentinel
     uint32_t          coolantLastUpdateMs = 0;
-    float             tankLevelPct        = TANK_LEVEL_HIGH_PCT;
+    float             tankLevelPct        = 0.0f;   // updated by tank sensor within first tick
     CoolantAlertState coolantAlertState   = CoolantAlertState::NORMAL;
 
     // Written by digital_alarms

@@ -35,33 +35,50 @@
 #define DEFAULT_PURGE_DURATION_S        600.0f
 
 // ----------------------------------------------------------
-//  Tank configuration
-//
-//  One physical tank, two Gobius Pro sensors:
-//    A2 / Gobius sensor A  → "below 3/4" threshold
-//    A3 / Gobius sensor B  → "below 1/4" threshold
-//
-//  Combined level estimate sent as a single PGN 127505 message:
-//    sensor A high, sensor B high  →  tank >= 3/4  → report 87.5 %
-//    sensor A low,  sensor B high  →  1/4 <= tank < 3/4  → report 50.0 %
-//    sensor A low,  sensor B low   →  tank < 1/4  → report 12.5 %
-//
-//  (Midpoints of each band are used so that MFD bar-graphs are
-//   centred within the correct segment.)
+//  Tank configuration — common
 // ----------------------------------------------------------
 
 /// Reported capacity (litres) transmitted in PGN 127505.
 #define DEFAULT_TANK_CAPACITY_L         100.0f
 
+// ----------------------------------------------------------
+//  Tank sensor — resistive mode (DEFAULT)
+//
+//  Uses HALMET constant-current source (10 mA) on A2 / ADS ch1.
+//  Resistance = V_adc / I.  Level ratio derived from a runtime-
+//  configurable CurveInterpolator (web UI calibration table).
+//
+//  Default curve: European VDO fuel sender
+//    10 Ω → 0.0 (empty)
+//   180 Ω → 1.0 (full)
+//
+//  To switch to Gobius Pro sensors instead, define TANK_SENSOR_GOBIUS
+//  in platformio.ini build_flags.
+// ----------------------------------------------------------
+#define TANK_SENDER_CHANNEL         1           // ADS ch1 = A2 screw terminal
+#define TANK_MEASUREMENT_CURRENT    0.01f       // 10 mA constant-current source
+#define TANK_RESISTANCE_MAX_OHM     320.0f      // hardware limit; above = fault
+#define TANK_RESISTANCE_EMPTY_OHM   10.0f       // VDO: empty
+#define TANK_RESISTANCE_FULL_OHM    180.0f      // VDO: full
+#define INTERVAL_TANK_MS            500         // resistive sender read interval
+
+// ----------------------------------------------------------
+//  Tank sensor — Gobius Pro mode (optional, define TANK_SENSOR_GOBIUS)
+//
+//  Two binary threshold sensors on A2+A3 / ADS ch1+ch2.
+//  Level reported as one of three fixed bands.
+// ----------------------------------------------------------
+#ifdef TANK_SENSOR_GOBIUS
 /// Gobius output voltage threshold (V).
 /// Below this → output is sinking to GND (threshold reached).
-#define GOBIUS_THRESHOLD_VOLTAGE        1.5f
+#define GOBIUS_THRESHOLD_VOLTAGE    1.5f
 
 /// Estimated level percentages for each combination of sensor states.
-/// These are the midpoints of the three bands: <1/4, 1/4–3/4, >=3/4.
-#define TANK_LEVEL_LOW_PCT              12.5f   // both sensors triggered  (< 1/4)
-#define TANK_LEVEL_MID_PCT              50.0f   // only 3/4 sensor triggered (1/4–3/4)
-#define TANK_LEVEL_HIGH_PCT             87.5f   // no sensor triggered     (>= 3/4)
+/// Midpoints of the three bands: <1/4, 1/4–3/4, >=3/4.
+#define TANK_LEVEL_LOW_PCT          12.5f   // both sensors triggered  (< 1/4)
+#define TANK_LEVEL_MID_PCT          50.0f   // only 3/4 sensor triggered (1/4–3/4)
+#define TANK_LEVEL_HIGH_PCT         87.5f   // no sensor triggered     (>= 3/4)
+#endif
 
 // ----------------------------------------------------------
 //  Temperature sender (Volvo Penta / VDO-type NTC)
@@ -138,7 +155,7 @@
 // ----------------------------------------------------------
 //  Polling intervals (ms)
 // ----------------------------------------------------------
-#define INTERVAL_ANALOG_MS              200     // A1 temp/tank reads
+#define INTERVAL_ANALOG_MS              200     // A1 coolant temp read
 #define INTERVAL_DIGITAL_ALARM_MS       500     // D2/D3 alarm inputs
 #define INTERVAL_1WIRE_MS               10000   // DS18B20 chain (slow)
 #define INTERVAL_RPM_MS                 100     // RPM counter update
