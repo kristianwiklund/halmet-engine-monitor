@@ -82,6 +82,7 @@ Inverted the config model from slot-centric (6 anonymous slots) to sensor-centri
 | # | Feature | Status |
 |---|---------|--------|
 | 20 | N2K bilge fan switch (PGN 127502 receive + PGN 127501 report) | Done |
+| 20b | SK bilge fan switch control (PUT listener on `electrical.switches.bilgeFan.state`; `supportsPut:true` metadata for KIP) | Done |
 
 ## Sprint 9 — Resistive Tank Sender (COMPLETE)
 

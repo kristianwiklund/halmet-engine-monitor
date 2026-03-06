@@ -29,6 +29,9 @@
 #include <sensesp_app_builder.h>
 #include <sensesp/ui/config_item.h>
 #include <sensesp/signalk/signalk_output.h>
+#include <sensesp/signalk/signalk_put_request_listener.h>
+#include <sensesp/signalk/signalk_value_listener.h>
+#include <sensesp/system/lambda_consumer.h>
 
 // --- NMEA 2000 ---
 #include <ArduinoOTA.h>
@@ -198,10 +201,27 @@ void setup() {
         ->set_title("Coolant alarm threshold (°C)");
 
     // --- Signal K outputs for data with no NMEA 2000 PGN ---
+
+    // Metadata subclass: no units (boolean path), adds supportsPut:true for KIP.
+    class SwitchMetadata : public SKMetadata {
+     public:
+      explicit SwitchMetadata(const String& display_name)
+          : display_name_(display_name) {}
+      void add_entry(const String& sk_path, JsonArray& meta) override {
+        JsonObject json = meta.add<JsonObject>();
+        json["path"] = sk_path;
+        JsonObject val = json["value"].to<JsonObject>();
+        val["displayName"] = display_name_;
+        val["supportsPut"] = true;
+      }
+     private:
+      String display_name_;
+    };
+
     auto* skFanState = new SKOutputBool("electrical.switches.bilgeFan.state", "",
-                                        new SKMetadata("Bilge fan", "Bilge fan purge active"));
+                                        new SwitchMetadata("Bilge fan"));
     auto* skIgnState = new SKOutputBool("electrical.switches.ignition.state", "",
-                                        new SKMetadata("Ignition key", "Ignition key present"));
+                                        new SKMetadata("", "Ignition turned on"));
     skFanState->set(false);
     skIgnState->set(false);
 
@@ -221,6 +241,15 @@ void setup() {
         if (skFanState) skFanState->set(on);
         ESP_LOGI("BilgeFan", "Relay -> %s", on ? "ON" : "OFF");
     });
+
+    // SK PUT listener — allows KIP (and other SK clients) to control the fan
+    auto* fanPutListener = new SKPutRequestListener<bool>(
+        "electrical.switches.bilgeFan.state");
+    fanPutListener->connect_to(new LambdaConsumer<bool>([](bool v) {
+        if (v) gBilgeFan.manualOn();
+        else   gBilgeFan.forceOff();
+        ESP_LOGI("BilgeFan", "SK PUT -> %s", v ? "ON" : "OFF");
+    }));
 
     // --- 1-Wire setup ---
     static onewire_setup::Outputs owOut = {};
