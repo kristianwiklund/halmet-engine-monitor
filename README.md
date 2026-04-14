@@ -105,7 +105,6 @@ halmet-engine/
 │   ├── engine_state_machine.h  RPM debounce & engine running detection
 │   ├── n2k_publisher.h         Periodic N2K PGN send callbacks
 │   ├── onewire_setup.h         1-Wire bus scan & sensor-centric dest config
-│   ├── OneWireSensors.h        Legacy 1-Wire helper (retained)
 │   └── diagnostics.h           SK heartbeat (uptime, version, reset reason)
 └── src/
     ├── main.cpp
@@ -117,7 +116,6 @@ halmet-engine/
     ├── engine_state_machine.cpp
     ├── n2k_publisher.cpp
     ├── onewire_setup.cpp
-    ├── OneWireSensors.cpp
     └── diagnostics.cpp
 ```
 

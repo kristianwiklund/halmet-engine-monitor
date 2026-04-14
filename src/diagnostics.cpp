@@ -17,7 +17,7 @@ using namespace sensesp;
 namespace diagnostics {
 
 void init(const EngineState* st) {
-    static auto* skDiagUptime    = new SKOutputFloat("design.halmet.diagnostics.uptimeSeconds", "");
+    static auto* skDiagUptime    = new SKOutputInt("design.halmet.diagnostics.uptimeSeconds", "");
     static auto* skDiagVersion   = new SKOutputString("design.halmet.diagnostics.firmwareVersion", "");
     static auto* skDiagAdsFails  = new SKOutputInt("design.halmet.diagnostics.adsFailCount", "");
     static auto* skDiagResetCode = new SKOutputInt("design.halmet.diagnostics.lastResetReason", "");
@@ -25,7 +25,7 @@ void init(const EngineState* st) {
     skDiagVersion->set(FW_VERSION_STR);
 
     event_loop()->onRepeat(INTERVAL_DIAG_MS, [st]() {
-        skDiagUptime->set(millis() / 1000.0f);
+        skDiagUptime->set(millis() / 1000);
         skDiagAdsFails->set(static_cast<int>(st->adsFailCount));
         skDiagResetCode->set(static_cast<int>(esp_reset_reason()));
     });

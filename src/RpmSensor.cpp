@@ -41,8 +41,9 @@ float RpmSensor::update() {
 
     // Atomically snapshot and clear the counter
     noInterrupts();
-    uint32_t pulses     = _pulseCount;
-    _pulseCount         = 0;
+    uint32_t pulses    = _pulseCount;
+    _pulseCount        = 0;
+    uint32_t lastPulse = _lastPulseTime;
     interrupts();
 
     // Compute instantaneous RPM from pulse count over the elapsed interval
@@ -59,10 +60,7 @@ float RpmSensor::update() {
     _smoothedRpm = sum / _sampleCount;
 
     // If no pulses in the last 2 seconds, engine is definitely stopped
-    noInterrupts();
-    uint32_t lastPulse = _lastPulseTime;
-    interrupts();
-    if ((micros() - lastPulse) > 2'000'000UL && _pulseCount == 0) {
+    if ((micros() - lastPulse) > 2'000'000UL && pulses == 0) {
         _smoothedRpm = 0.0f;
         // Reset moving-average buffer so stale values don't linger
         for (int i = 0; i < kMaxSamples; i++) _samples[i] = 0.0f;

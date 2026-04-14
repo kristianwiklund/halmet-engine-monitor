@@ -90,17 +90,17 @@ Inverted the config model from slot-centric (6 anonymous slots) to sensor-centri
 |---|---------|--------|
 | 21 | Replace Gobius 3-band logic with continuous resistive sender (constant-current, CurveInterpolator, VDO 10–180 Ω default). Gobius mode retained via `-D TANK_SENSOR_GOBIUS`. | Done |
 
-## Sprint 10 — Code Review Fixes
+## Sprint 10 — Code Review Fixes (COMPLETE)
 
 Issues found during 2026-04-14 code review. All low-risk, no functional impact on running firmware.
 
-| # | Issue | Fix | Complexity |
-|---|-------|-----|------------|
-| 22 | RPM volatile read outside interrupt guard (`RpmSensor.cpp:65`) | Move `_pulseCount` read into the same `noInterrupts()` block as `_lastPulseTime` (lines 62-64). Currently a TOCTOU race: ISR can increment `_pulseCount` between the protected `_lastPulseTime` read and the unprotected `_pulseCount == 0` check. Worst case: one 100 ms tick falsely reads RPM as 0, recovers next tick. | Trivial |
-| 23 | Stale I/O map comment in `main.cpp` header (lines 18-19) | Update A2/A3 comments to reflect Sprint 9 change: A2 is now resistive tank sender (default), Gobius mode only when `-D TANK_SENSOR_GOBIUS` is set. A3 is spare (Gobius mode only). | Trivial |
-| 24 | Dead files: `src/OneWireSensors.cpp` and `include/OneWireSensors.h` | Delete both. They contain only "REMOVED" comments and serve no purpose. | Trivial |
-| 25 | Explicit flash size in `platformio.ini` | Add `board_build.flash_size = 16MB` to `[halmet_base]`. `esp32dev` defaults to 4 MB; HALMET has 16 MB. Works today because ESP32 ROM auto-detects, but being explicit prevents surprises. | Trivial |
-| 26 | Diagnostics uptime float precision (`diagnostics.cpp:28`) | Change `millis() / 1000.0f` to `millis() / 1000.0` (double division). Float loses precision after ~4.5 hours; double stays precise for the full 49-day `millis()` range. | Trivial |
+| # | Issue | Status |
+|---|-------|--------|
+| 22 | RPM volatile TOCTOU race — consolidated both volatile reads (`_pulseCount`, `_lastPulseTime`) into a single `noInterrupts()` block, eliminating the second critical section | Done |
+| 23 | Stale I/O map comment in `main.cpp` — updated A2/A3 to reflect resistive tank sender (Sprint 9) | Done |
+| 24 | Dead `OneWireSensors` files — deleted `.cpp` and `.h`, cleaned references in README.md and init_repo.ps1 | Done |
+| 25 | Explicit flash size — added `board_build.flash_size = 16MB`, fixed stale "8 MB" comment in platformio.ini | Done |
+| 26 | Diagnostics uptime — changed from `SKOutputFloat` (millis()/1000.0f) to `SKOutputInt` (millis()/1000); original float→double fix was a no-op since `SKOutputFloat` truncates back to `float` | Done |
 
 ## Candidate Pool — FROZEN (do not pick up unless explicitly ordered)
 

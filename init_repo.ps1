@@ -27,7 +27,6 @@ Files:
   include/halmet_config.h        - Pin assignments and defaults
   include/BilgeFan.h/.cpp        - Bilge fan purge state machine
   include/RpmSensor.h/.cpp       - Alternator W-terminal RPM counter
-  include/OneWireSensors.h/.cpp  - DS18B20 1-Wire chain
   include/N2kSenders.h/.cpp      - NMEA 2000 PGN helpers
   src/main.cpp                   - Application entry point
   README.md                      - Wiring, config, troubleshooting guide

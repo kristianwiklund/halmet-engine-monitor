@@ -15,8 +15,9 @@
 //    D3 / GPIO 27  → Coolant temperature warning (active-low)
 //    D4 / GPIO 26  → Ignition key sense (+12 V present = ON) [optional]
 //    A1 / ADS ch0  → VP coolant temp sender voltage (parallel to gauge)
-//    A2 / ADS ch1  → Gobius Pro sensor A OUT1 ("below 3/4" threshold)
-//    A3 / ADS ch2  → Gobius Pro sensor B OUT1 ("below 1/4" threshold)
+//    A2 / ADS ch1  → Resistive tank sender (10 mA CCS, default)
+//                     or Gobius Pro sensor A (-D TANK_SENSOR_GOBIUS)
+//    A3 / ADS ch2  → Spare; Gobius Pro sensor B (-D TANK_SENSOR_GOBIUS)
 //    1-Wire        → DS18B20 engine-room temperature probes
 //    GPIO 32       → Bilge fan relay output
 //    GPIO 33       → Engine warning lamp (HIGH = any alarm active)

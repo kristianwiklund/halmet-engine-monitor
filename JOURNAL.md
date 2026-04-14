@@ -37,3 +37,12 @@ Full firmware review across correctness, hardware compatibility, SensESP pattern
 - #26: Diagnostics uptime float precision (cosmetic)
 
 All trivial fixes, no functional impact on running firmware.
+
+### Sprint 10 implementation
+- Discussed plan with new hire — they improved 3 of 5 items:
+  - #22: Consolidate into one critical section instead of patching the second (cleaner)
+  - #24: Also clean up README.md and init_repo.ps1 references
+  - #25: Fix wrong "8 MB" comment (board has 16 MB)
+  - #26: Caught that SKOutputFloat truncates to float, making the double fix a no-op → switched to SKOutputInt with integer seconds instead
+- All 5 fixes implemented and committed.
+- **Build not verified** — PlatformIO not installed on this machine. Needs `pio run -e halmet` before flashing.
