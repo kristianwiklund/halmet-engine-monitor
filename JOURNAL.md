@@ -22,3 +22,18 @@ Project imported from `../halmet-engine-monitor` with full git history (20+ comm
 - Candidate pool: frozen, do not pick up without explicit instruction
 
 **Build status:** Compiles successfully. Not yet tested on hardware in this workspace.
+
+## 2026-04-14 — Code review
+
+Full firmware review across correctness, hardware compatibility, SensESP patterns, and performance.
+
+**Result: No must-fix issues.** The firmware is safe and well-structured.
+
+**5 should-fix / suggestion items added to roadmap as Sprint 10:**
+- #22: RPM volatile read TOCTOU race (minor, one-tick false zero at worst)
+- #23: Stale I/O map comment in main.cpp (misleading after Sprint 9)
+- #24: Dead OneWireSensors files (cleanup)
+- #25: Explicit flash size in platformio.ini (correctness)
+- #26: Diagnostics uptime float precision (cosmetic)
+
+All trivial fixes, no functional impact on running firmware.
