@@ -35,12 +35,16 @@ void init(const InitParams& p) {
     PersistingObservableValue<float>*  povPulses  = p.pulsesPerRev;
     PersistingObservableValue<float>*  povThresh  = p.runningThreshold;
 
-    // RPM counter + N2K PGN 127488 (100 ms / 10 Hz)
-    event_loop()->onRepeat(INTERVAL_RPM_MS, [st, nmea, rpm, povPulses, povThresh]() {
+    // RPM measurement (10 Hz — feeds smoothing window and engine state)
+    event_loop()->onRepeat(INTERVAL_RPM_MS, [st, rpm, povPulses, povThresh]() {
         rpm->setPulsesPerRev(povPulses->get());
         float rpmVal = rpm->update();
         updateEngineState(st, rpmVal > povThresh->get());
-        N2kSenders::sendEngineRapidUpdate(*nmea, N2K_ENGINE_INSTANCE, rpmVal);
+    });
+
+    // PGN 127488 — Engine Rapid Update (4 Hz, decoupled from measurement)
+    event_loop()->onRepeat(INTERVAL_RPM_N2K_MS, [nmea, rpm]() {
+        N2kSenders::sendEngineRapidUpdate(*nmea, N2K_ENGINE_INSTANCE, rpm->getRpm());
     });
 }
 

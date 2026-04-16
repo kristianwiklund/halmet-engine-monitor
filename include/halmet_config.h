@@ -170,7 +170,11 @@
 #define INTERVAL_ANALOG_MS              200     // A1 coolant temp read
 #define INTERVAL_DIGITAL_ALARM_MS       500     // D2/D3 alarm inputs
 #define INTERVAL_1WIRE_MS               10000   // DS18B20 chain (slow)
-#define INTERVAL_RPM_MS                 100     // RPM counter update
+#define INTERVAL_RPM_MS                 100     // RPM counter update (measurement)
+#define INTERVAL_RPM_N2K_MS             250     // PGN 127488 send rate (4 Hz)
+#define INTERVAL_N2K_SLOW_MS            1000    // PGN 127489/127505/127501 send rate
+#define INTERVAL_N2K_PUMP_MS            1       // NMEA 2000 ParseMessages() tick
 #define INTERVAL_FAN_MS                 1000    // Fan state machine tick
+#define INTERVAL_SK_SUPPLEMENTAL_MS     5000    // SK-only data (fan state, ignition)
 #define INTERVAL_DIAG_MS                10000   // Diagnostics heartbeat
 #define INTERVAL_ONEWIRE_DIAG_MS        10000   // 1-Wire sensor list to SK

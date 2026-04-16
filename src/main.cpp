@@ -276,8 +276,8 @@ void setup() {
         gBilgeFan.update(gState.engineRunning, gPurgeDurationSec->get());
     });
 
-    // Signal K supplemental data (5 s)
-    event_loop()->onRepeat(5000, [skFanState, skIgnState]() {
+    // Signal K supplemental data
+    event_loop()->onRepeat(INTERVAL_SK_SUPPLEMENTAL_MS, [skFanState, skIgnState]() {
         if (skFanState) skFanState->set(gBilgeFan.relayOn());
         if (skIgnState) skIgnState->set(digitalRead(HALMET_PIN_D4) == HIGH);
     });

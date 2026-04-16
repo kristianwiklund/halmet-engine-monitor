@@ -56,7 +56,7 @@ void init(const InitParams& p) {
     nmea->SetMsgHandler(handleSwitchBankControl);
 
     // N2K slow PGNs: PGN 127489 + PGN 127505 + PGN 127501 (1 s)
-    event_loop()->onRepeat(1000, [st, nmea, povTankCap, bilgeFan]() {
+    event_loop()->onRepeat(INTERVAL_N2K_SLOW_MS, [st, nmea, povTankCap, bilgeFan]() {
         double coolantToSend = st->coolantK;
         if (st->coolantLastUpdateMs == 0 ||
             (millis() - st->coolantLastUpdateMs) > STALE_DATA_TIMEOUT_MS) {
@@ -86,8 +86,8 @@ void init(const InitParams& p) {
         }
     });
 
-    // NMEA 2000 message pump (every 1 ms — must be fast)
-    event_loop()->onRepeat(1, [nmea]() {
+    // NMEA 2000 message pump (must be fast)
+    event_loop()->onRepeat(INTERVAL_N2K_PUMP_MS, [nmea]() {
         nmea->ParseMessages();
     });
 }
