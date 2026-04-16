@@ -170,7 +170,7 @@ void init(const InitParams& p) {
 
     // Battery voltage on A4 / ADS ch3
     PersistingObservableValue<float>* povVoltMul = p.voltageMultiplier;
-    auto* skVoltage = new SKOutputFloat("electrical.batteries.0.voltage");
+    auto* skVoltage = new SKOutputFloat("electrical.batteries.0.voltage", "/voltage/sk_path");
     event_loop()->onRepeat(INTERVAL_VOLTAGE_MS, [st, ads, povVoltMul, skVoltage]() {
         if (!st->adsOk) return;
         float v = ads->computeVolts(ads->readADC_SingleEnded(VOLTAGE_CHANNEL));
