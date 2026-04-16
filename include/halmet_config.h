@@ -109,6 +109,18 @@
 /// Model ID reported on the N2K bus.
 #define N2K_MODEL_ID                    "HALMET Engine Monitor"
 
+/// N2K product code (arbitrary, used in SetProductInformation).
+#define N2K_PRODUCT_CODE                100
+
+/// N2K device function: 160 = Engine Gateway.
+#define N2K_DEVICE_FUNCTION             160
+
+/// N2K device class: 25 = Propulsion.
+#define N2K_DEVICE_CLASS                25
+
+/// N2K manufacturer code: 999 = conventional placeholder for uncertified devices.
+#define N2K_MANUFACTURER_CODE           999
+
 // ----------------------------------------------------------
 //  I2C bus & ADS1115 (HALMET PCB-fixed, not variant-configurable)
 //  HALMET routes SDA→GPIO21, SCL→GPIO22.

@@ -102,6 +102,36 @@ Issues found during 2026-04-14 code review. All low-risk, no functional impact o
 | 25 | Explicit flash size — added `board_build.flash_size = 16MB`, fixed stale "8 MB" comment in platformio.ini | Done |
 | 26 | Diagnostics uptime — changed from `SKOutputFloat` (millis()/1000.0f) to `SKOutputInt` (millis()/1000); original float→double fix was a no-op since `SKOutputFloat` truncates back to `float` | Done |
 
+## Sprint 11 — Code Review Findings (2026-04-16)
+
+Issues found during code review. Grouped by severity.
+
+### Safety / Correctness
+
+| # | Issue | Description | Complexity |
+|---|-------|-------------|------------|
+| 27 | Hardware watchdog (promote from Sprint 5) | Still the most important missing safety feature. A hung ESP32 means silent loss of all alarms. Deregister from TWDT during OTA (`esp_task_wdt_delete` in `ArduinoOTA.onStart`), reset in `loop()` | Low |
+| 28 | Bilge fan manual override vs engine start | `manualOn()` latches relay ON, but if the engine starts while latched, the fan stays on through `RUNNING` state — opposite of design intent. Clear `_manualOverride` and call `setRelay(false)` on transition to `RUNNING` | Low |
+| 29 | Decouple RPM N2K send rate from measurement rate | `engine_state_machine.cpp` sends PGN 127488 every 100 ms (10 Hz). RPM *calculation* should stay at 10 Hz for smoothing, but the N2K *send* should be a separate callback at 2–4 Hz to reduce bus load | Low |
+| 30 | RpmSensor static ISR — enforce single instance | `_pulseCount` / `_lastPulseTime` are static; a second `RpmSensor` instance would silently share state. Add a guard in `begin()` | Low |
+
+### Cleanup / Hygiene
+
+| # | Issue | Description | Complexity |
+|---|-------|-------------|------------|
+| 31 | N2K address persistence — avoid unnecessary NVS churn | `ReadResetAddressChanged()` check runs every 10 s and opens/closes NVS each time. Address only changes once after boot. Add a `static bool` flag to stop polling after first save | Low |
+| 32 | Magic numbers in N2K setup | Product code `100`, device function `160`, device class `25`, manufacturer code `999` are inline in `setupNmea2000()`. Move to named constants in `halmet_config.h` | Low |
+| 33 | OTA password mismatch | `platformio.ini` hardcodes `"SomeOTAPassword"` in `[env:halmet-ota]` and in `builder.enable_ota()`. Both should come from `secrets.h` | Low |
+| 34 | Extract `SwitchMetadata` from `main.cpp` | One-off inner class clutters main. Move to a small header | Low |
+| 35 | `FW_VERSION_STR` single source of truth | Defined as a `-D` build flag in `platformio.ini`; easy to forget to update. Consider generating from a `version.h` or a pre-build script | Low |
+
+### Functional Gaps
+
+| # | Issue | Description | Complexity |
+|---|-------|-------------|------------|
+| 36 | Gobius mode missing Signal K output | The `#ifdef TANK_SENSOR_GOBIUS` path in `analog_inputs.cpp` updates `st->tankLevelPct` for N2K but never publishes to Signal K. The resistive path has `connect_to(new SKOutputFloat(...))` | Low |
+| 37 | Document `EngineState` single-task invariant | All fields are read/written from the Arduino `loop()` task only. Add a comment to `engine_state.h` noting this invariant so future changes don't introduce data races | Low |
+
 ## Candidate Pool — FROZEN (do not pick up unless explicitly ordered)
 
 Features evaluated and deliberately deferred. Do **not** schedule, implement, or re-evaluate these without a direct instruction from the project owner.

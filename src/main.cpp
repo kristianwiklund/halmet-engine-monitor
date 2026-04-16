@@ -48,6 +48,7 @@
 #include "engine_state.h"
 #include "BilgeFan.h"
 #include "RpmSensor.h"
+#include "SwitchMetadata.h"
 #include "analog_inputs.h"
 #include "digital_alarms.h"
 #include "engine_state_machine.h"
@@ -86,11 +87,10 @@ static void setupNmea2000() {
     uint8_t savedAddr = prefs.getUChar("addr", 23);
     prefs.end();
 
-    gNmea2000.SetProductInformation(N2K_DEVICE_SERIAL, 100, N2K_MODEL_ID,
-                                    FW_VERSION_STR, "1.0.0");
-    // deviceFunction=160 (Engine Gateway), deviceClass=25 (Propulsion),
-    // manufacturerCode=999 (conventional placeholder for uncertified devices).
-    gNmea2000.SetDeviceInformation(uniqueNum, 160, 25, 999);
+    gNmea2000.SetProductInformation(N2K_DEVICE_SERIAL, N2K_PRODUCT_CODE,
+                                    N2K_MODEL_ID, FW_VERSION_STR, "1.0.0");
+    gNmea2000.SetDeviceInformation(uniqueNum, N2K_DEVICE_FUNCTION,
+                                   N2K_DEVICE_CLASS, N2K_MANUFACTURER_CODE);
     gNmea2000.SetN2kCANSendFrameBufSize(250);
     gNmea2000.SetN2kCANReceiveFrameBufSize(250);
     gNmea2000.SetMode(tNMEA2000::N2km_NodeOnly, savedAddr);
@@ -160,12 +160,15 @@ void setup() {
 
     // --- Persist N2K source address after address claiming ---
     event_loop()->onRepeat(10000, []() {
+        static bool saved = false;
+        if (saved) return;
         if (gNmea2000.ReadResetAddressChanged()) {
             uint8_t addr = gNmea2000.GetN2kSource();
             Preferences prefs;
             prefs.begin("n2k", /*readOnly=*/false);
             prefs.putUChar("addr", addr);
             prefs.end();
+            saved = true;
             ESP_LOGI("HALMET", "N2K address claimed: %d (saved)", addr);
         }
     });
@@ -202,22 +205,6 @@ void setup() {
         ->set_title("Coolant alarm threshold (°C)");
 
     // --- Signal K outputs for data with no NMEA 2000 PGN ---
-
-    // Metadata subclass: no units (boolean path), adds supportsPut:true for KIP.
-    class SwitchMetadata : public SKMetadata {
-     public:
-      explicit SwitchMetadata(const String& display_name)
-          : display_name_(display_name) {}
-      void add_entry(const String& sk_path, JsonArray& meta) override {
-        JsonObject json = meta.add<JsonObject>();
-        json["path"] = sk_path;
-        JsonObject val = json["value"].to<JsonObject>();
-        val["displayName"] = display_name_;
-        val["supportsPut"] = true;
-      }
-     private:
-      String display_name_;
-    };
 
     auto* skFanState = new SKOutputBool("electrical.switches.bilgeFan.state", "",
                                         new SwitchMetadata("Bilge fan"));

@@ -6,6 +6,12 @@
 //  A single flat struct replacing scattered file-scope globals.
 //  One static instance lives in main.cpp and is passed by
 //  pointer to each module's init() function.
+//
+//  Thread safety: all fields are read and written exclusively
+//  from the Arduino loop() task via event_loop() callbacks.
+//  No mutex is required as long as this invariant holds.
+//  If any field is ever accessed from another FreeRTOS task
+//  or an ISR, add appropriate synchronisation.
 // ============================================================
 
 #include <cstdint>
