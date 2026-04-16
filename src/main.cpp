@@ -156,7 +156,7 @@ void setup() {
     builder.set_hostname("halmet-engine")
            ->set_wifi_client(WIFI_SSID, WIFI_PASSWORD)
            ->set_sk_server(SK_SERVER_IP, SK_SERVER_PORT)
-           ->enable_ota("SomeOTAPassword")
+           ->enable_ota(OTA_PASSWORD)
            ->get_app();
 
     // --- Persist N2K source address after address claiming ---

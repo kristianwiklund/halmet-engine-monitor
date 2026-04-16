@@ -26,6 +26,12 @@ RpmSensor::RpmSensor(uint8_t pin, float pulsesPerRev, int smoothingSamples)
 {}
 
 void RpmSensor::begin() {
+    static bool initialized = false;
+    if (initialized) {
+        ESP_LOGE("RPM", "RpmSensor::begin() called twice — only one instance supported");
+        return;
+    }
+    initialized = true;
     pinMode(_pin, INPUT);                            // HALMET D-inputs have external pull/clamp
     attachInterrupt(digitalPinToInterrupt(_pin),
                     isrHandler,
