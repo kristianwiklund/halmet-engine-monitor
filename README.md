@@ -13,11 +13,12 @@ monitoring a **Volvo Penta MD7A** diesel engine via NMEA 2000.
 | Feature | Implementation |
 |---|---|
 | Engine RPM | Alternator W-terminal pulse counter → PGN 127488 |
-| Coolant temperature | VP/VDO NTC sender on A1, parallel to gauge → PGN 127489 |
+| Coolant temperature | INA226 current sensor on shared I2C bus. Derives sender resistance from `V_bus / I_shunt`; maps resistance → °C via runtime-editable VDO Type A NTC curve → PGN 127489 |
 | Oil pressure warning | Binary switch on D2 (active-low) → PGN 127489 status bit |
 | Temperature warning | Binary switch on D3 (active-low) → PGN 127489 status bit |
 | Engine room temps | DS18B20 1-Wire chain on GPIO 4 → PGN 130316 |
 | Tank level | Resistive sender (VDO 10–180 Ω) on A2 via 10 mA CCS → PGN 127505; runtime-calibratable curve (Gobius 3-band mode via `-D TANK_SENSOR_GOBIUS`) |
+| Battery voltage | Supply voltage on A4 / ADS ch3, 20 kΩ/2.2 kΩ divider → PGN 127508 + SK `electrical.batteries.0.voltage` |
 | Bilge fan purge | Relay on GPIO 32; runs after engine stop for configurable time |
 | N2K bilge fan switch | PGN 127502 receive (MFD manual on/off) + PGN 127501 Binary Switch Bank Status at 1 Hz |
 | Warning lamp | GPIO 33 HIGH when oil or coolant alarm active |
@@ -30,9 +31,11 @@ D1 / GPIO 23   ← Alternator W-terminal (via 1 kΩ + diode clamp circuit)
 D2 / GPIO 25   ← Oil pressure switch  (one side), other side to GND
 D3 / GPIO 27   ← Temp warning switch  (one side), other side to GND
 D4 / GPIO 26   ← Ignition key +12 V rail (optional)
-A1 / ADS ch0   ← VP coolant temp sender terminal (parallel to existing gauge)
+A1 / ADS ch0   ← Spare (coolant temp no longer read from A1 — see INA226 below)
 A2 / ADS ch1   ← Resistive tank sender (10 mA CCS, VDO 10–180 Ω)  — enable CCS jumper on A2
 A3 / ADS ch2   ← Gobius sensor B OUT1 (Gobius mode only, 10 kΩ pull-up to +3.3 V)
+A4 / ADS ch3   ← Battery / supply voltage (20 kΩ/2.2 kΩ divider, 0–32 V)
+I2C (GPIO 21/22) ← INA226 current sensor (shunt in series with VDO coolant sender)
 GPIO 4         ← DS18B20 1-Wire DQ   (pull-up built into HALMET)
 GPIO 32        → Bilge fan relay module IN
 GPIO 33        → Warning lamp (HIGH when oil/coolant alarm active)
@@ -78,7 +81,20 @@ All runtime parameters are adjustable via the SensESP web UI at
 | `/rpm/pulses_per_rev` | 10.0 | W-terminal pulses per crankshaft rev — **calibrate first!** |
 | `/rpm/running_threshold` | 200 RPM | RPM above which engine is "running" |
 | `/bilge/purge_duration_s` | 600 s | Bilge fan on-time after engine stop |
-| `/tank/capacity_l` | 100 L | Tank volume for PGN 127505. The resistance-to-level calibration curve is also configurable in the web UI (CurveInterpolator table). |
+| `/tank/capacity_l` | 100 L | Tank volume for PGN 127505 |
+| `/tank/resistance_curve` | VDO 10–180 Ω | CurveInterpolator: resistance (Ω) → level ratio (0–1). Edit in web UI to match your sender. |
+| `/coolant/resistance_curve` | VDO Type A NTC | CurveInterpolator: resistance (Ω) → temperature (°C). Pre-loaded with European VDO curve. User-editable. |
+| `/coolant/warn_threshold_c` | 95 °C | Signal K warn notification threshold |
+| `/coolant/alarm_threshold_c` | 105 °C | Signal K alarm notification threshold |
+| `/voltage/multiplier` | 10.09 | A4 voltage divider multiplier. HALMET uses 20 kΩ/2.2 kΩ → (20+2.2)/2.2 = 10.09. Adjust if resistors differ. |
+| `/n2k/engine_instance` | 0 | NMEA 2000 engine instance (0–252) |
+| `/n2k/product_code` | 100 | N2K product code (requires restart) |
+| `/n2k/device_function` | 160 | N2K device function — 160 = Engine Gateway (requires restart) |
+| `/n2k/device_class` | 25 | N2K device class — 25 = Propulsion (requires restart) |
+| `/n2k/manufacturer_code` | 999 | N2K manufacturer code — 999 = uncertified placeholder (requires restart) |
+| `/intervals/rpm_n2k_ms` | 250 ms | PGN 127488 send interval (requires restart) |
+| `/intervals/n2k_slow_ms` | 1000 ms | PGN 127489/127505/127501/127508 send interval (requires restart) |
+| `/intervals/sk_supplemental_ms` | 5000 ms | Signal K-only data interval (requires restart) |
 
 ## RPM Calibration
 
@@ -131,6 +147,7 @@ Managed automatically by PlatformIO from `platformio.ini`:
 | esp_websocket_client | IDF Component Registry URL | IDF 5.x managed component |
 | SensESP/OneWire | `SensESP/OneWire @ ^3.0.1` | Replaces raw OneWire + DallasTemperature |
 | Adafruit ADS1X15 | `adafruit/Adafruit ADS1X15 @ ^2.5` | PlatformIO registry |
+| INA226_WE | `wollewald/INA226_WE` | I2C current/voltage sensor for coolant sender resistance measurement |
 
 ## Troubleshooting
 

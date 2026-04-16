@@ -46,3 +46,40 @@ All trivial fixes, no functional impact on running firmware.
   - #26: Caught that SKOutputFloat truncates to float, making the double fix a no-op → switched to SKOutputInt with integer seconds instead
 - All 5 fixes implemented and committed.
 - **Build not verified** — PlatformIO not installed on this machine. Needs `pio run -e halmet` before flashing.
+
+## 2026-04-16 — Sprints 11–14
+
+### Sprint 11 — Quick wins (multiple commits)
+
+Seven items from the roadmap candidate and review pools implemented:
+- #27/#28/#29/#30: Hardware watchdog consolidated, bilge manual override bug fixed, RPM N2K rate decoupled from measurement rate, RPM single-instance guard
+- #31–#37: N2K address persistence fix, N2K device constants to named macros, OTA password from secrets.h, SwitchMetadata header, FW_VERSION_STR from git tag, Gobius SK output, EngineState invariant documented
+- Rebased to SensESP 3.3.0
+
+### Sprint 12 — Web UI configuration (#38 #39 #40)
+
+All three items implemented:
+- N2K engine instance now configurable via web UI (`/n2k/engine_instance`)
+- Send intervals (RPM N2K, slow N2K, SK supplemental) configurable via web UI — require restart
+- N2K device constants (product code, device function, device class, manufacturer code) configurable via web UI — require restart
+- `setupNmea2000()` moved to run **after** SensESP app builder so `PersistingObservableValue` config items are loaded before N2K init
+- Build verified.
+
+### Sprint 13 — Battery voltage & coolant temp accuracy (#41 #42 #43)
+
+Three significant features:
+- **#41 Battery voltage**: A4 / ADS ch3 reads supply voltage via HALMET's onboard 20 kΩ/2.2 kΩ divider (10.09:1). Published as PGN 127508 and SK `electrical.batteries.0.voltage`. Multiplier is runtime-configurable.
+- **#42 Coolant temp via INA226**: A1 voltage-based approach retired. INA226 current sensor placed on shared I2C bus (0x40). Shunt resistor (100 mΩ) in series with VDO sender. Firmware computes `R = V_bus / I_shunt` — direct resistance regardless of supply voltage or gauge coil uncertainty.
+- **#43 VDO NTC CurveInterpolator**: `CurveInterpolator` pre-populated with VDO Type A (European) NTC curve (287 Ω/40 °C → 16 Ω/120 °C). User-editable via web UI at `/coolant/resistance_curve`.
+- Added INA226_WE to lib_deps. Build verified.
+
+### Sprint 14 — Post-Sprint-13 code review (#44–#50)
+
+Code review after Sprint 13 found 7 items:
+- #44: False positive — `SetN2kDCBatStatus` is a valid alias, confirmed in N2kMessages.h. Closed without change.
+- #45: Added `ina226Ok` flag to `EngineState`; guarded INA226 callbacks. Protects against missing hardware.
+- #46: Noted (not fixed): `CurveInterpolator` used synchronously — safe today, document the invariant before adding downstream observers.
+- #47/#48: Removed dead macros `TEMP_CURVE_POINTS`, `COOLANT_VOLT_MIN_V`, `COOLANT_VOLT_MAX_V` from `halmet_config.h`.
+- #49: Battery N2K send guard tightened to `if (st->adsOk && st->supplyVoltageV > 0.0f)`.
+- #50: Renamed `gVoltageMultiplier` → `voltageMultiplier` (local variable, `g` prefix was incorrect).
+- Build verified.

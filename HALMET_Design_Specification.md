@@ -40,10 +40,10 @@ The board does **not** have a relay output on-board. A small relay module must b
 
 | Input | Signal | Mode | Notes |
 |---|---|---|---|
-| A1 | Coolant/oil temperature sender | Passive voltage | In parallel with VP gauge, high-impedance |
+| A1 | Spare | — | No longer used for coolant temperature. Coolant measurement moved to INA226 on I2C (see §3.2). |
 | A2 | Resistive tank sender (10 mA CCS) | Active resistance | VDO 10–180 Ω default; Gobius 3-band mode via `-D TANK_SENSOR_GOBIUS` build flag. CCS jumper must be installed on A2 in default mode. See §3.3. |
 | A3 | Gobius sensor B OUT1 (Gobius mode only) | Passive voltage w/ pull-up | Only used when `-D TANK_SENSOR_GOBIUS` is set. See §3.3. |
-| A4 | Spare (e.g. battery voltage sense) | Passive voltage | Optional |
+| A4 | Battery / supply voltage | Passive voltage | HALMET onboard 20 kΩ/2.2 kΩ voltage divider (10.09:1). Publishes PGN 127508 and SK `electrical.batteries.0.voltage`. Multiplier is runtime-configurable. See §3.4. |
 
 ### 2.3 1-Wire Bus (GPIO 4)
 
@@ -51,7 +51,7 @@ Used for DS18B20 temperature probes scattered across the engine room. Up to ~10 
 
 ### 2.4 I²C Bus (GPIO 21/22)
 
-Reserved for the onboard ADS1115 ADC. **Do not connect other I²C devices while NMEA 2000 isolation is required** — the I²C header shares ground with the MCU and would break galvanic isolation.
+Shared between the onboard ADS1115 ADC (address 0x4B) and the INA226 current sensor (address 0x40, default A0/A1 = GND). Both devices operate on the same 400 kHz bus. **Do not connect other I²C devices while NMEA 2000 isolation is required** — the I²C header shares ground with the MCU and would break galvanic isolation.
 
 ### 2.5 GPIO Header — Relay Output
 
@@ -114,19 +114,31 @@ This value is typically 6–14 depending on the specific alternator. Measure pul
 
 The MD7A uses VDO-compatible senders that are ground-referenced through the engine block.
 
-**Temperature sender (to A1):**
+**Coolant temperature sender (INA226 on I2C):**
 
-The original gauge connects between the switched ignition supply (+12 V via ignition switch) and the sender terminal. The sender resistance drops as temperature rises (typical VDO NTC characteristic: ~250 Ω at 40°C, ~50 Ω at 100°C, ~20 Ω at 120°C). The HALMET should be connected in **passive voltage measurement mode** — i.e., A1 measures the voltage at the sender terminal with respect to the engine block ground, in parallel with the existing gauge. Leave the A1 current-source jumper **open** (jumper removed). The existing gauge provides the excitation.
+Coolant temperature is derived from the VDO NTC sender resistance, measured via an INA226 current sensor on the shared I2C bus. A 100 mΩ shunt resistor is placed in series with the sender. The INA226 measures both the bus voltage (across the sender) and the shunt current simultaneously. Firmware computes:
 
 ```
-Ignition +12V ──── [Gauge coil ~100 Ω] ──┬──── [Sender NTC]  ──── GND (block)
-                                          │
-                                      A1 of HALMET (high-impedance)
+R_sender = V_bus / I_shunt
 ```
 
-A CurveInterpolator in firmware maps the measured voltage to degrees Celsius using a calibration table derived from the VDO sender spec or measured empirically.
+This avoids dependence on the gauge coil resistance (which would affect a parallel voltage measurement) and gives a direct resistance reading regardless of supply voltage variation.
 
-**Oil pressure warning switch (to D2):** This is a normally-closed switch that opens when pressure drops below ~0.5 bar. Connect one side to D2, other side to GND (engine block). D2 sees a floating high state (pulled up internally by HALMET) when oil pressure is good, and a short-to-GND when the warning activates. Configure in firmware as an active-low alarm input.
+A `CurveInterpolator` maps resistance to temperature using the VDO Type A (European) NTC curve as default. The table is pre-populated in firmware and editable via the web UI (`/coolant/resistance_curve`).
+
+```
+Ignition +12V ──── [Gauge coil] ──┬──── [100 mΩ shunt] ──── [Sender NTC] ──── GND (block)
+                                  │           │                    │
+                               (existing    INA226 shunt        INA226 bus
+                                gauge)      current sense       voltage sense
+                                            → I2C (GPIO 21/22) on HALMET
+```
+
+INA226 configuration: shunt = 100 mΩ, max current = 1 A, averaging = 64 samples (hardware filter). I2C address: 0x40 (A0=GND, A1=GND).
+
+**Note:** A1 / ADS ch0 is no longer connected to the coolant sender.
+
+**Oil pressure warning switch (to D2):** Normally-closed switch that opens when oil pressure drops below ~0.5 bar. Connect one side to D2, other side to GND (engine block). Active-low input. D2 is pulled up internally by HALMET.
 
 **Temperature warning switch (to D3):** Same wiring as D2 — normally open, closes to GND on high temperature. Active-low.
 
@@ -168,7 +180,19 @@ When the Gobius output sinks to GND: A2 reads 0 V → "threshold reached"
 
 **Note on BLE:** Although the ESP32 has BLE, the Gobius Pro uses a proprietary BLE profile. The wired outputs are simpler and more reliable — use them.
 
-### 3.4 1-Wire Temperature Sensors (Engine Room)
+### 3.4 Battery / Supply Voltage Sensing (A4)
+
+A4 / ADS ch3 reads the supply voltage rail via the HALMET's onboard 20 kΩ/2.2 kΩ resistive divider, giving a scaling factor of (20 + 2.2) / 2.2 = **10.09:1**. This allows measuring up to ~33 V on a 12 V or 24 V boat.
+
+Connect A4 to the ignition-switched +12 V supply (or directly to the battery positive terminal if always-on monitoring is preferred). No external resistors are needed — the HALMET's internal divider handles voltage scaling.
+
+The firmware multiplier (`/voltage/multiplier`, default 10.09) is runtime-configurable to compensate for resistor tolerance. Published as:
+- PGN 127508 (Battery Status), battery instance 0
+- SK path `electrical.batteries.0.voltage`
+
+PGN 127508 is sent only when `adsOk` is true and `supplyVoltageV > 0.0`, to avoid transmitting zero/garbage readings during startup or I2C fault.
+
+### 3.5 1-Wire Temperature Sensors (Engine Room)
 
 DS18B20 waterproof probes wired in a bus topology from the 1-Wire header (GPIO 4). Recommended wiring for long cable runs (up to ~20 m total):
 
@@ -191,9 +215,9 @@ Use CAT5 cable (one pair per bus segment). Each sensor has a unique 64-bit ROM a
 | SensESP v3 | `SignalK/SensESP @ ^3.1.0` | Reactive sensor pipeline, WiFi config, OTA, Signal K |
 | NMEA2000-library | `ttlappalainen/NMEA2000-library` | NMEA 2000 node on CAN bus |
 | NMEA2000_esp32 | GitHub URL (not in registry) | ESP32 TWAI/CAN driver |
-| OneWire | `paulstoffregen/OneWire @ ^2.3` | DS18B20 bus protocol |
-| DallasTemperature | `milesburton/DallasTemperature @ ^3.9` | DS18B20 temperature reads |
-| Adafruit ADS1X15 | `adafruit/Adafruit ADS1X15 @ ^2.5` | 16-bit ADC readings |
+| SensESP/OneWire | `SensESP/OneWire @ ^3.0.1` | DS18B20 bus protocol + SensESP integration (replaces raw OneWire + DallasTemperature) |
+| Adafruit ADS1X15 | `adafruit/Adafruit ADS1X15 @ ^2.5` | 16-bit ADC readings (ADS1115 on I2C) |
+| INA226_WE | `wollewald/INA226_WE` | INA226 current/voltage sensor for coolant sender resistance measurement |
 
 Build system: **PlatformIO** with the **pioarduino** platform fork (required for Arduino ESP32 Core 3.x / IDF 5.x, which SensESP v3 depends on). The official `espressif32` platform is frozen at Core 2.0.17 and is incompatible with SensESP v3.
 
@@ -207,6 +231,7 @@ All data is sent via both NMEA 2000 and Signal K where applicable. Data that fit
 | Oil pressure warning | PGN 127489 field: Status1 bit "Low Oil Pressure" | N2K primary |
 | Temperature warning | PGN 127489 field: Status1 bit "Over Temperature" | N2K primary |
 | Coolant temperature | PGN 127489 field: Engine Temperature | N2K primary |
+| Battery / supply voltage | PGN 127508 (Battery Status), instance 0 | N2K primary + SK `electrical.batteries.0.voltage` |
 | 1-Wire temperatures (configurable) | PGN 130316 (Temperature Extended Range) | N2K + SK (destination-dependent, see §4.5) |
 | Tank level (resistive sender, default) | PGN 127505 (Fluid Level) | N2K primary |
 | Tank level (Gobius 3-band mode) | PGN 127505 (Fluid Level) — synthesised from threshold crossings | N2K primary (build flag `-D TANK_SENSOR_GOBIUS`) |
@@ -214,6 +239,7 @@ All data is sent via both NMEA 2000 and Signal K where applicable. Data that fit
 | Bilge fan status | PGN 127501 (Binary Switch Bank Status) at 1 Hz | N2K primary |
 | Bilge fan state | No standard N2K PGN → Signal K key `electrical.switches.bilgeFan.state` | WiFi / Signal K WS |
 | Ignition key state (optional) | No standard PGN → Signal K key `electrical.switches.ignition.state` | WiFi / Signal K WS |
+| Coolant temp notifications | No N2K PGN → Signal K `notifications.propulsion.0.coolantTemperature` | WiFi / Signal K WS |
 
 ### 4.3 Engine Running Detection & Bilge Fan State Machine
 
@@ -254,7 +280,7 @@ Each of the 6 DS18B20 sensor slots has a web-UI-configurable destination that de
 
 Destinations with `n2kSource = -1` (indices 0, 8, 9) emit to Signal K only. All other destinations send on both N2K (PGN 130316) and Signal K. The `{i}` suffix is the sensor slot index (0–5).
 
-Coolant temperature is **not** part of this system — it comes from the Volvo Penta engine sender on A1 and is sent in PGN 127489.
+Coolant temperature is **not** part of this system — it is derived via the INA226 current sensor and sent in PGN 127489.
 
 ---
 
@@ -265,30 +291,32 @@ Coolant temperature is **not** part of this system — it comes from the Volvo P
 | 1 | D1 | 23 | Alternator W → RPM | Digital counter | Via diode clamp circuit |
 | 2 | D2 | 25 | Oil pressure warning | Digital alarm | Active-low, NPN switch |
 | 3 | D3 | 27 | Temperature warning | Digital alarm | Active-low, NPN switch |
-| 4 | D4 | 26 | Ignition key sense | Digital input | Optional, +12V sense |
-| 5 | A1 | ADS1115 ch0 | VP coolant temp sender | Analog passive | Parallel to gauge |
+| 4 | D4 | 26 | Ignition key sense | Digital input | Optional, +12 V sense |
+| 5 | A1 | ADS1115 ch0 | Spare | — | No longer used. Coolant temp now via INA226 on I2C. |
 | 6 | A2 | ADS1115 ch1 | Resistive tank sender (CCS) | Active resistance | Default mode; CCS jumper installed. VDO 10–180 Ω. Gobius OUT1 in Gobius mode (build flag). |
 | 7 | A3 | ADS1115 ch2 | Gobius sensor B OUT1 | Analog w/ pull-up | Gobius mode only (`-D TANK_SENSOR_GOBIUS`). Not used in default mode. |
-| 8 | A4 | ADS1115 ch3 | Battery voltage / spare | Analog passive | Optional |
-| 9 | 1-Wire | GPIO 4 | DS18B20 chain | 1-Wire bus | Multiple sensors |
-| 10 | GPIO 32 | GPIO header | Bilge fan relay | Digital output | Via relay module |
-| 11 | GPIO 33 | GPIO header | Warning lamp | Digital output | HIGH when oil or coolant alarm active |
-| 12 | N2K | CAN bus | All engine/tank data | NMEA 2000 | Primary data bus |
-| 13 | WiFi | Integrated | Fan/key state, OTA, config | TCP/IP | Supplemental only |
+| 8 | A4 | ADS1115 ch3 | Battery / supply voltage | Analog passive | HALMET 20 kΩ/2.2 kΩ divider (10.09:1). 0–32 V range. PGN 127508 + SK. |
+| 9 | I2C | GPIO 21 (SDA) / 22 (SCL) | INA226 (coolant sender) + ADS1115 (ADC) | I2C bus | INA226 at 0x40, ADS1115 at 0x4B. 400 kHz. |
+| 10 | 1-Wire | GPIO 4 | DS18B20 chain | 1-Wire bus | Multiple sensors; pull-up built into HALMET |
+| 11 | GPIO 32 | GPIO header | Bilge fan relay | Digital output | Via relay module |
+| 12 | GPIO 33 | GPIO header | Warning lamp | Digital output | HIGH when oil or coolant alarm active |
+| 13 | N2K | CAN bus | All engine/tank data | NMEA 2000 | Primary data bus |
+| 14 | WiFi | Integrated | Fan/key state, battery V, OTA, config | TCP/IP | Supplemental and config only |
 
 ---
 
 ## 6. Commissioning Checklist
 
 1. **Wire W-terminal circuit** — verify sine-wave signal present at W terminal with oscilloscope or AC voltmeter before connecting to HALMET.
-2. **Calibrate RPM** — start engine, compare HALMET RPM readout against a handheld optical tachometer. Adjust `pulses_per_revolution` until both agree. Typical starting value: 10–13.
-3. **Test alarm inputs** — with engine off, short D2 to GND momentarily to verify oil pressure alarm registers on MFD.
-4. **Calibrate temperature curve** — record voltage on A1 at known coolant temperatures (e.g. engine cold = ambient, engine warm = ~85°C per coolant gauge). Adjust CurveInterpolator points.
-5. **Test tank sensor** — in default (resistive) mode: fill tank to known level, verify PGN 127505 level reading against the expected value for the measured sender resistance. Adjust the CurveInterpolator calibration table in the web UI if needed. If using Gobius mode (`-D TANK_SENSOR_GOBIUS`): verify OUT1 transitions with the phone app showing level crossing the configured threshold.
-6. **Calibrate tank sender curve** (default resistive mode only) — measure sender resistance at empty and full. Open the web UI config page and edit the `/tank/curve` CurveInterpolator table to match your sender's resistance-to-level characteristic.
-7. **Test bilge fan logic** — start engine (fan should stay OFF), stop engine (fan should activate), wait `T_purge` (fan should stop). Verify fan never runs before engine starts.
-8. **Verify NMEA 2000** — open MFD or Actisense Reader; confirm PGN 127488 and 127489 appearing with correct engine instance.
-9. **Verify Signal K** — check `electrical.switches.bilgeFan.state` updating via the Signal K dashboard.
+2. **Wire INA226** — install 100 mΩ shunt in series with the VDO coolant sender. Connect INA226 V+ and V− across the shunt; connect INA226 SDA/SCL to HALMET I2C header (GPIO 21/22). Address pins A0/A1 to GND (default 0x40).
+3. **Calibrate RPM** — start engine, compare HALMET RPM readout against a handheld optical tachometer. Adjust `pulses_per_rev` until both agree. Typical starting value: 10–13.
+4. **Test alarm inputs** — with engine off, short D2 to GND momentarily to verify oil pressure alarm registers on MFD.
+5. **Calibrate coolant temperature curve** — with the engine cold, open the web UI and note the resistance reading at `/coolant/resistance_curve`. At operating temperature, compare HALMET's reported coolant value against the original gauge. Adjust the CurveInterpolator table at `/coolant/resistance_curve` if needed. The pre-loaded VDO Type A curve is a good starting point for European VDO senders.
+6. **Verify battery voltage** — check `electrical.batteries.0.voltage` in Signal K against a known-good voltmeter. Adjust `/voltage/multiplier` if the readings differ (default 10.09 assumes exact resistor values).
+7. **Test tank sensor** — in default (resistive) mode: fill tank to known level, verify PGN 127505 level reading against the expected value for the measured sender resistance. Adjust the CurveInterpolator calibration table at `/tank/resistance_curve` in the web UI if needed. If using Gobius mode (`-D TANK_SENSOR_GOBIUS`): verify OUT1 transitions with the phone app showing level crossing the configured threshold.
+8. **Test bilge fan logic** — start engine (fan should stay OFF), stop engine (fan should activate), wait `T_purge` (fan should stop). Verify fan never runs before engine starts.
+9. **Verify NMEA 2000** — open MFD or Actisense Reader; confirm PGN 127488, 127489, and 127508 appearing with correct engine instance.
+10. **Verify Signal K** — check `electrical.switches.bilgeFan.state` and `electrical.batteries.0.voltage` updating via the Signal K dashboard.
 
 ---
 
@@ -299,13 +327,21 @@ Coolant temperature is **not** part of this system — it comes from the Volvo P
 | `/rpm/pulses_per_rev` | 10.0 | W-terminal pulses per engine crankshaft revolution (calibrate!) |
 | `/rpm/running_threshold` | 200 RPM | RPM above which engine is considered running |
 | `/bilge/purge_duration_s` | 600 s | How long to run bilge fan after engine stop |
-| `/tank/tank1_capacity_l` | 100 L | Volume of tank 1 (for PGN 127505 scaling) |
-| `/tank/tank2_capacity_l` | 100 L | Volume of tank 2 |
-| `/tank/curve` | VDO 10–180 Ω curve | Runtime-editable CurveInterpolator table in web UI. Maps sender resistance (Ω) to level ratio (0.0–1.0). Default: 10 Ω = 0.0 (empty), 180 Ω = 1.0 (full). Only active in default resistive sender mode. |
-| `/coolant/warn_threshold_c` | 95 °C | Coolant temperature Signal K "warn" notification |
-| `/coolant/alarm_threshold_c` | 105 °C | Coolant temperature Signal K "alarm" notification |
-| `/onewire/sensor{i}/dest` | 1 (Engine room) | 1-Wire sensor slot destination index (see §4.5) |
-| `/onewire/sensor{i}/address` | (auto) | 1-Wire sensor ROM address (auto-discovered, editable in web UI) |
+| `/tank/capacity_l` | 100 L | Volume of tank (for PGN 127505 scaling) |
+| `/tank/resistance_curve` | VDO 10–180 Ω | Runtime-editable CurveInterpolator: sender resistance (Ω) → level ratio (0.0–1.0). Default: 10 Ω = 0.0 (empty), 180 Ω = 1.0 (full). Active in default resistive sender mode only. |
+| `/coolant/resistance_curve` | VDO Type A NTC | Runtime-editable CurveInterpolator: sender resistance (Ω) → temperature (°C). Pre-populated with European VDO NTC values. User-editable for non-VDO senders. |
+| `/coolant/warn_threshold_c` | 95 °C | Coolant temperature Signal K "warn" notification threshold |
+| `/coolant/alarm_threshold_c` | 105 °C | Coolant temperature Signal K "alarm" notification threshold |
+| `/voltage/multiplier` | 10.09 | A4 voltage divider multiplier. HALMET onboard divider = (20 kΩ + 2.2 kΩ) / 2.2 kΩ = 10.09. Adjust if resistor values differ. |
+| `/n2k/engine_instance` | 0 | NMEA 2000 engine instance number (0–252) |
+| `/n2k/product_code` | 100 | N2K product code. Requires restart. |
+| `/n2k/device_function` | 160 | N2K device function (160 = Engine Gateway). Requires restart. |
+| `/n2k/device_class` | 25 | N2K device class (25 = Propulsion). Requires restart. |
+| `/n2k/manufacturer_code` | 999 | N2K manufacturer code (999 = uncertified placeholder). Requires restart. |
+| `/intervals/rpm_n2k_ms` | 250 ms | PGN 127488 (RPM) send interval. Requires restart. |
+| `/intervals/n2k_slow_ms` | 1000 ms | PGN 127489/127505/127501/127508 send interval. Requires restart. |
+| `/intervals/sk_supplemental_ms` | 5000 ms | Signal K supplemental data (fan state, ignition) interval. Requires restart. |
+| `/onewire/<rom_hex>/dest` | 1 (Engine room) | 1-Wire sensor destination index per ROM address (see §4.5). Requires reboot after change. |
 
 ---
 
@@ -381,45 +417,94 @@ All items implemented and verified on hardware (commit `0af9730`).
 | 15 | Add `propulsion.0.intakeManifoldTemperature` to 1-Wire destination list (index 10) | Done |
 | 16 | Add `propulsion.0.engineBlockTemperature` to 1-Wire destination list (index 11) | Done |
 
-### Sprint 4 — Architecture Refactor
+### Sprint 4 — Architecture Refactor (COMPLETE)
 
-`main.cpp` is at ~493 lines — the 500-line threshold is effectively reached. Refactor before adding medium+ complexity features.
+| # | Feature | Status |
+|---|---------|--------|
+| 13 | Shared state struct (`EngineState`) | Done |
+| 14 | Decompose monolithic `setup()` into modules (`analog_inputs`, `digital_alarms`, `engine_state_machine`, `n2k_publisher`, `diagnostics`) | Done |
 
-| # | Feature | Description | Complexity |
-|---|---------|-------------|------------|
-| 13 | Shared state struct | Replace scattered `static` globals with a single `EngineState` struct. Required before the module split so all modules can read/write shared data without cross-including each other | Low |
-| 14 | Decompose monolithic setup() | Split `main.cpp` into focused modules (analog_inputs, digital_alarms, engine_state, n2k_publisher, diagnostics). Each module exposes an `init()` function that registers its own event-loop callbacks | Medium |
+### Sprint 5 — OTA Robustness & Watchdog (COMPLETE)
 
-### Sprint 5 — OTA Robustness & Watchdog
-
-Depends on Sprint 3 item 9 (relay safety) being verified on hardware before item 12 is merged.
-
-| # | Feature | Description | Complexity |
-|---|---------|-------------|------------|
-| 12 | Hardware watchdog | Register ESP32 task watchdog (~8 s timeout); reset in `loop()` and inside analog callback after I2C reads. Must deregister from TWDT during OTA (`esp_task_wdt_delete`), not just reset — OTA blocks `loop()` for 30–90 s | Low |
+| # | Feature | Status |
+|---|---------|--------|
+| 12 | Hardware watchdog: ESP32 task watchdog (8 s), deregistered before OTA begins | Done |
 
 ### Sprint 6 — ROM-Based 1-Wire Sensor Selection (COMPLETE)
 
 | # | Feature | Status |
 |---|---------|--------|
-| 17 | Improve 1-Wire sensor selection: list detected sensors by ROM address (+ live value) instead of slot index; dropdown destination picker per ROM in web UI | Done |
+| 17 | List detected 1-Wire sensors by ROM address; dropdown destination picker per ROM in web UI | Done |
 
 ### Sprint 8 — N2K Bilge Fan Switch & Warning Lamp (COMPLETE)
 
 | # | Feature | Status |
 |---|---------|--------|
-| 18 | N2K bilge fan switch: receive PGN 127502 (Switch Bank Control) from MFD; `BilgeFan::manualOn()` latch with `_manualOverride` guard | Done |
-| 19 | PGN 127501 (Binary Switch Bank Status) transmit at 1 Hz reporting bilge fan relay state | Done |
-| 20 | Warning lamp on GPIO 33: HIGH when oil pressure or coolant temperature alarm is active | Done |
-| 21 | PGN 127489 cleanup: removed unmeasurable fields (oil pressure value, alternator voltage); CheckEngine status bit set when any alarm is raised | Done |
+| 18 | N2K bilge fan switch: receive PGN 127502 (Switch Bank Control) from MFD | Done |
+| 19 | PGN 127501 (Binary Switch Bank Status) transmit at 1 Hz | Done |
+| 20 | Warning lamp on GPIO 33: HIGH when any alarm active | Done |
+| 21 | PGN 127489 cleanup: removed unmeasurable fields; CheckEngine status bit set on alarm | Done |
 
 ### Sprint 9 — Resistive Tank Sender (COMPLETE)
 
 | # | Feature | Status |
 |---|---------|--------|
-| 22 | Default tank sensor changed from Gobius 3-band to continuous resistive sender on A2 using HALMET 10 mA CCS; R = V_adc / I | Done |
-| 23 | Runtime-configurable CurveInterpolator (resistance Ω → level ratio) in web UI; default curve: VDO 10 Ω (empty) → 180 Ω (full) | Done |
+| 22 | Default tank sensor: continuous resistive sender on A2 (10 mA CCS); R = V_adc / I | Done |
+| 23 | Runtime-configurable CurveInterpolator (resistance Ω → level ratio); default: VDO 10 Ω (empty) / 180 Ω (full) | Done |
 | 24 | Gobius 3-band mode retained as optional via `-D TANK_SENSOR_GOBIUS` build flag | Done |
+
+### Sprint 10 — Code Review Quick Wins (COMPLETE)
+
+| # | Feature | Status |
+|---|---------|--------|
+| 22 | RPM volatile read TOCTOU race — consolidated into single critical section | Done |
+| 23 | Stale I/O map comment in main.cpp | Done |
+| 24 | Dead OneWireSensors files cleaned up | Done |
+| 25 | Explicit flash size in platformio.ini (16 MB, corrected from 8 MB comment) | Done |
+| 26 | Diagnostics uptime: switched to `SKOutputInt` (integer seconds) to avoid float truncation | Done |
+
+### Sprint 11 — Quick Wins (COMPLETE)
+
+| # | Feature | Status |
+|---|---------|--------|
+| 27 | Hardware watchdog consolidated from Sprint 5 | Done |
+| 28 | Bilge fan manual override not cleared on engine restart — fixed | Done |
+| 29 | Decouple RPM N2K send rate from measurement rate | Done |
+| 30 | RPM single-instance guard | Done |
+| 31 | N2K address persistence — stop polling after first save | Done |
+| 32 | N2K device constants moved to named macros in `halmet_config.h` | Done |
+| 33 | OTA password from `secrets.h` | Done |
+| 34 | `SwitchMetadata` extracted to separate header | Done |
+| 35 | `FW_VERSION_STR` derived from git tag via `get_version.py` pre-build script | Done |
+| 36 | Gobius mode Signal K output added | Done |
+| 37 | `EngineState` single-task invariant documented | Done |
+
+### Sprint 12 — Web UI Configuration (COMPLETE)
+
+| # | Feature | Status |
+|---|---------|--------|
+| 38 | N2K engine instance configurable via web UI (`/n2k/engine_instance`) | Done |
+| 39 | Send intervals configurable via web UI (`/intervals/rpm_n2k_ms`, `/intervals/n2k_slow_ms`, `/intervals/sk_supplemental_ms`). Requires restart. | Done |
+| 40 | N2K device constants configurable via web UI (`/n2k/product_code`, etc.). `setupNmea2000()` moved after SensESP app builder init. Requires restart. | Done |
+
+### Sprint 13 — Battery Voltage & Coolant Temp Accuracy (COMPLETE)
+
+| # | Feature | Status |
+|---|---------|--------|
+| 41 | Battery voltage on A4 (ADS ch3, 20 kΩ/2.2 kΩ divider). PGN 127508 + SK `electrical.batteries.0.voltage`. | Done |
+| 42 | Coolant temp via INA226 on I2C. Derives sender resistance from `V_bus / I_shunt`. Replaces A1 voltage-based measurement. | Done |
+| 43 | `CurveInterpolator` for resistance → °C mapping. Pre-populated with VDO Type A (European) NTC curve. User-editable in web UI. | Done |
+
+### Sprint 14 — Post-Sprint-13 Code Review (COMPLETE)
+
+| # | Issue | Status |
+|---|-------|--------|
+| 44 | ~~Wrong NMEA2000 function name in `sendBatteryStatus`~~ | False positive — closed. `SetN2kDCBatStatus` is a valid alias. |
+| 45 | INA226 health flag (`ina226Ok`) missing from `EngineState` | Done |
+| 47 | Dead `TEMP_CURVE_POINTS` macro removed from `halmet_config.h` | Done |
+| 48 | Dead `COOLANT_VOLT_MIN_V` / `COOLANT_VOLT_MAX_V` constants removed | Done |
+| 49 | Battery N2K send guard tightened: `if (st->adsOk && st->supplyVoltageV > 0.0f)` | Done |
+| 50 | Local variable `gVoltageMultiplier` renamed to `voltageMultiplier` (dropped incorrect `g` prefix) | Done |
 
 ### Candidate Pool — FROZEN (do not pick up unless explicitly ordered)
 
@@ -427,9 +512,8 @@ Features evaluated and deliberately deferred. Do **not** schedule, implement, or
 
 | Feature | Reason deferred |
 |---------|----------------|
-| Two-tank support (second PGN 127505 instance) | Single tank with two Gobius threshold sensors — no second tank to monitor |
-| Battery voltage on A4 (PGN 127508) | Victron equipment already provides battery monitoring on the N2K bus |
-| Configurable N2K engine instance | Single engine on the bus; no conflict risk with current installation |
-| Runtime-configurable temp curve | High complexity, low value for single-boat install. Compile-time `TEMP_CURVE_POINTS` in `halmet_config.h` is easy to edit and reflash. Risk of malformed runtime config producing silently wrong temperatures |
-| Engine hours counter | Persist accumulated runtime seconds to LittleFS in 1-minute increments. Send in PGN 127489 `EngineTotalHours`. Deferred — low priority for current usage pattern |
-| I2C LCD display (2×16 ASCII) showing engine temp, RPM, voltage (from N2K bus), configurable via web UI | Requires I2C display driver, N2K bus listener for voltage PGN, web UI config for display layout |
+| Two-tank support (second PGN 127505 instance) | Single tank — no second tank to monitor |
+| Engine hours counter | Persist accumulated runtime seconds to LittleFS in 1-minute increments; send in PGN 127489 `EngineTotalHours`. Low priority for current usage pattern. |
+| I2C LCD display (2×16 ASCII) | Requires I2C display driver, N2K bus listener, web UI config for display layout |
+| Live temperature in 1-Wire config card description | Low-priority UX polish; sensors can be identified by warming/cooling and checking SK diagnostics |
+| Hot-reload 1-Wire sensor assignments without restart | Medium complexity; SensESP restart button serves as workaround |
