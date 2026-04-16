@@ -134,8 +134,8 @@ Issues found during code review. Grouped by severity.
 | # | Feature | Description | Complexity |
 |---|---------|-------------|------------|
 | 41 | Battery voltage sensing on A4 | Read supply voltage on ADS ch3 (A4). Wire to ignition-switched +12V rail — HALMET onboard 0–32V conditioning handles scaling. Publish as PGN 127508 (Battery Status) and SK `electrical.batteries.0.voltage`. Also used as reference voltage for #42 | Low |
-| 42 | Coolant temp measurement redesign | Start from scratch: document the actual circuit topology, determine what A1 is measuring, then design the correct conversion. All previous assumptions (voltage ratio, zero gauge resistance, VDO curves) are archived below and may or may not apply | Medium |
-| 43 | Runtime-configurable temp curve | Blocked on #42 — implementation depends on the measurement approach chosen in the redesign | Medium |
+| 42 | Coolant temp via INA226 current sensor | INA226 on shared I2C bus (GPIO 21/22), shunt in series with VDO sender. Derive sender resistance from `R = V_bus / I_shunt` (INA226 provides both). Map resistance → °C via CurveInterpolator (#43). A1 no longer used for coolant temp. Requires INA226 library in `lib_deps` | Medium |
+| 43 | Runtime-configurable temp curve | `CurveInterpolator` mapping sender resistance (Ω) → temperature (°C). Pre-populated with VDO Type A (European) and VDO Type B (US) NTC curves selectable in web UI. User can fine-tune individual points. Depends on #42 | Medium |
 
 ### Archived assumptions (Sprint 13, pre-redesign)
 
