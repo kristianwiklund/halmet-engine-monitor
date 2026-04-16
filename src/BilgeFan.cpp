@@ -25,13 +25,16 @@ void BilgeFan::update(bool engineRunning, float purgeDurationSec) {
         case FanState::IDLE:
             if (!_manualOverride) setRelay(false);   // Guarantee relay is OFF
             if (engineRunning) {
+                _manualOverride = false;
+                setRelay(false);
                 _state = FanState::RUNNING;
             }
             break;
 
         // -------------------------------------------------------
         case FanState::RUNNING:
-            if (!_manualOverride) setRelay(false);   // Guarantee relay is OFF
+            _manualOverride = false;                 // Never run fan while engine is running
+            setRelay(false);
             if (!engineRunning) {
                 _timerSec = purgeDurationSec;
                 _state    = FanState::PURGE;
@@ -42,7 +45,8 @@ void BilgeFan::update(bool engineRunning, float purgeDurationSec) {
         case FanState::PURGE:
             if (engineRunning) {
                 // Engine restarted during purge — abort immediately
-                if (!_manualOverride) setRelay(false);
+                _manualOverride = false;
+                setRelay(false);
                 _state = FanState::RUNNING;
                 break;
             }
