@@ -134,8 +134,19 @@ Issues found during code review. Grouped by severity.
 | # | Feature | Description | Complexity |
 |---|---------|-------------|------------|
 | 41 | Battery voltage sensing on A4 | Read supply voltage on ADS ch3 (A4). Wire to ignition-switched +12V rail — HALMET onboard 0–32V conditioning handles scaling. Publish as PGN 127508 (Battery Status) and SK `electrical.batteries.0.voltage`. Also used as reference voltage for #42 | Low |
-| 42 | Coolant temp voltage-ratio correction | Use A4 supply voltage (#41) to compute voltage ratio at A1 instead of raw voltage. Makes coolant temp reading independent of battery/alternator voltage swings (12.2–14.4 V). Update curve to use ratio→°C instead of voltage→°C | Medium |
-| 43 | Runtime-configurable temp curve | Replace compile-time `TEMP_CURVE_POINTS` and hand-rolled `voltageToCelsius()` with a `CurveInterpolator`. Assume gauge has zero internal resistance so A1 voltage maps directly to sender resistance via R = V/I (where I comes from the supply voltage ratio, #42). Pre-populate with two standard VDO NTC curves selectable in web UI: **VDO Type A (European)** — 287Ω/40°C, 187Ω/50°C, 124Ω/60°C, 84Ω/70°C, 58.5Ω/80°C, 41Ω/90°C, 29.7Ω/100°C, 21.5Ω/110°C, 16Ω/120°C; **VDO Type B (US)** — 648Ω/40°C, 247Ω/60°C, 100Ω/80°C, 43Ω/100°C, 20Ω/120°C. Default to Type A (Volvo Penta MD7A). User can fine-tune individual points in the CurveInterpolator web UI table after selecting a base curve | Medium |
+| 42 | Coolant temp measurement redesign | Start from scratch: document the actual circuit topology, determine what A1 is measuring, then design the correct conversion. All previous assumptions (voltage ratio, zero gauge resistance, VDO curves) are archived below and may or may not apply | Medium |
+| 43 | Runtime-configurable temp curve | Blocked on #42 — implementation depends on the measurement approach chosen in the redesign | Medium |
+
+### Archived assumptions (Sprint 13, pre-redesign)
+
+The following were discussed but NOT validated against the actual hardware. Do not use without verification:
+- Assumed circuit: +12V → gauge coil → sender → GND, A1 at junction
+- Assumed gauge coil resistance ~100 Ω (from design spec comment, unverified)
+- Assumed VDO Type A (European) NTC curve: 287Ω/40°C → 16Ω/120°C
+- Assumed VDO Type B (US) NTC curve: 648Ω/40°C → 20Ω/120°C
+- Assumed zero gauge resistance for direct resistance mapping
+- Assumed voltage ratio correction using A4 supply voltage as reference
+- None of the above has been confirmed on the actual boat
 
 ## Candidate Pool — FROZEN (do not pick up unless explicitly ordered)
 
