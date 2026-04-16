@@ -86,7 +86,7 @@ void init(const InitParams& p) {
         ->set_description("Sender resistance (ohms) to temperature (°C). Default: VDO Type A (European)");
 
     event_loop()->onRepeat(INTERVAL_INA226_MS, [st, ina, resCurve, skNotif, povWarn, povAlarm]() {
-        if (!ina) return;
+        if (!ina || !st->ina226Ok) return;
         float busV   = ina->getBusVoltage_V();
         float shuntI = ina->getCurrent_mA() / 1000.0f;  // convert to A
         if (shuntI <= 0.001f) {

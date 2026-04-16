@@ -148,6 +148,32 @@ The following were discussed but NOT validated against the actual hardware. Do n
 - Assumed voltage ratio correction using A4 supply voltage as reference
 - None of the above has been confirmed on the actual boat
 
+## Sprint 14 — Code Review Findings (2026-04-16, Sprint 13)
+
+Issues found during post-Sprint-13 code review.
+
+### Safety / Correctness
+
+| # | Issue | Description | Complexity |
+|---|-------|-------------|------------|
+| 44 | ~~Wrong NMEA2000 function name in `sendBatteryStatus`~~ | **False positive — closed.** `SetN2kDCBatStatus` is a valid inline alias for `SetN2kPGN127508` confirmed in `N2kMessages.h:2123`. No change needed. | N/A |
+| 45 | INA226 has no health flag | **Done.** Added `ina226Ok` to `EngineState`, captured `gIna226.init()` result in setup, guarded lambda with `if (!ina \|\| !st->ina226Ok) return`. | Low |
+
+### Design / Fragility
+
+| # | Issue | Description | Complexity |
+|---|-------|-------------|------------|
+| 46 | `CurveInterpolator` used as synchronous function | `resCurve->set(resistance)` then `resCurve->get()` works today because no downstream observers are wired to `resCurve`. If a future developer wires one (e.g. an SK output), it will fire every 500 ms even when faulted. Add a comment documenting the invariant, or refactor to a proper reactive chain. | Low |
+
+### Cleanup / Hygiene
+
+| # | Issue | Description | Complexity |
+|---|-------|-------------|------------|
+| 47 | `TEMP_CURVE_POINTS` macro still defined | The `voltageToCelsius()` function that consumed it was deleted, but the macro likely remains in `halmet_config.h`. Verify and remove. | Low |
+| 48 | Legacy voltage fault constants not removed | `COOLANT_VOLT_MIN_V` and `COOLANT_VOLT_MAX_V` are labeled "(legacy A1)" but still defined. If nothing references them, delete them. | Low |
+| 49 | Battery N2K send guard too loose | `if (st->supplyVoltageV > 0.0f)` in `n2k_publisher.cpp` suppresses sends while ADS is not yet healthy, but is inconsistent with other ADS-backed paths. Change to `if (st->adsOk && st->supplyVoltageV > 0.0f)` for consistency. | Low |
+| 50 | `gVoltageMultiplier` declared inside `setup()` | `auto* gVoltageMultiplier = new PersistingObservableValue<float>(...)` uses the `g` prefix but is local to `setup()`. Move to file-scope static (like other `g`-prefixed globals) or drop the `g` prefix. | Low |
+
 ## Candidate Pool — FROZEN (do not pick up unless explicitly ordered)
 
 Features evaluated and deliberately deferred. Do **not** schedule, implement, or re-evaluate these without a direct instruction from the project owner.

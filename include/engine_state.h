@@ -48,5 +48,6 @@ struct EngineState {
     float    supplyVoltageV     = 0.0f;
 
     // Written by analog_inputs (INA226 coolant sender)
+    bool     ina226Ok            = false;
     float    senderResistanceOhm = NAN;
 };

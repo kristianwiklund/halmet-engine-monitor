@@ -161,7 +161,8 @@ void setup() {
     }
 
     // --- INA226 current sensor (coolant temp sender) ---
-    if (gIna226.init()) {
+    gState.ina226Ok = gIna226.init();
+    if (gState.ina226Ok) {
         gIna226.setResistorRange(INA226_SHUNT_RESISTANCE_OHM, 1.0);  // 1A max expected
         gIna226.setAverage(INA226_AVERAGE_64);
         ESP_LOGI("HALMET", "INA226 found at 0x%02X", INA226_I2C_ADDRESS);
