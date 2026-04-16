@@ -44,14 +44,14 @@ All items implemented and verified on hardware (commit `0af9730`).
 | 15 | Add `propulsion.0.intakeManifoldTemperature` to 1-Wire destination list (index 10) | Done |
 | 16 | Add `propulsion.0.engineBlockTemperature` to 1-Wire destination list (index 11) | Done |
 
-## Sprint 4 — Architecture Refactor
+## Sprint 4 — Architecture Refactor (COMPLETE)
 
-`main.cpp` is at ~500 lines — the 500-line threshold is effectively reached. Refactor before adding medium+ complexity features.
+Implemented in commit `f48dd79`. `main.cpp` reduced from ~505 to ~230 lines.
 
-| # | Feature | Description | Complexity |
-|---|---------|-------------|------------|
-| 13 | Shared state struct | Replace scattered `static` globals with a single `EngineState` struct. Required before the module split so all modules can read/write shared data without cross-including each other | Low |
-| 14 | Decompose monolithic setup() | Split `main.cpp` into focused modules (analog_inputs, digital_alarms, engine_state, n2k_publisher, diagnostics). Each module exposes an `init()` function that registers its own event-loop callbacks | Medium |
+| # | Feature | Status |
+|---|---------|--------|
+| 13 | Shared state struct (`EngineState`) | Done |
+| 14 | Decompose monolithic `setup()` into focused modules | Done |
 
 ## Sprint 5 — OTA Robustness & Watchdog (COMPLETE — see Sprint 11 #27)
 
