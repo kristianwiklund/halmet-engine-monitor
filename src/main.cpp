@@ -227,9 +227,9 @@ void setup() {
     ConfigItem(gCoolantAlarmC)
         ->set_title("Coolant alarm threshold (°C)");
 
-    auto* gVoltageMultiplier = new PersistingObservableValue<float>(
+    auto* voltageMultiplier = new PersistingObservableValue<float>(
         DEFAULT_VOLTAGE_MULTIPLIER, "/voltage/multiplier");
-    ConfigItem(gVoltageMultiplier)
+    ConfigItem(voltageMultiplier)
         ->set_title("A4 voltage divider multiplier (20k/2.2k = 10.09)");
 
     // --- N2K device config (requires restart) ---
@@ -347,7 +347,7 @@ void setup() {
         .skCoolantNotification = skCoolantNotification,
         .coolantWarnC          = gCoolantWarnC,
         .coolantAlarmC         = gCoolantAlarmC,
-        .voltageMultiplier     = gVoltageMultiplier,
+        .voltageMultiplier     = voltageMultiplier,
     });
 
     digital_alarms::init(&gState);

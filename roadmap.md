@@ -169,10 +169,10 @@ Issues found during post-Sprint-13 code review.
 
 | # | Issue | Description | Complexity |
 |---|-------|-------------|------------|
-| 47 | `TEMP_CURVE_POINTS` macro still defined | The `voltageToCelsius()` function that consumed it was deleted, but the macro likely remains in `halmet_config.h`. Verify and remove. | Low |
-| 48 | Legacy voltage fault constants not removed | `COOLANT_VOLT_MIN_V` and `COOLANT_VOLT_MAX_V` are labeled "(legacy A1)" but still defined. If nothing references them, delete them. | Low |
-| 49 | Battery N2K send guard too loose | `if (st->supplyVoltageV > 0.0f)` in `n2k_publisher.cpp` suppresses sends while ADS is not yet healthy, but is inconsistent with other ADS-backed paths. Change to `if (st->adsOk && st->supplyVoltageV > 0.0f)` for consistency. | Low |
-| 50 | `gVoltageMultiplier` declared inside `setup()` | `auto* gVoltageMultiplier = new PersistingObservableValue<float>(...)` uses the `g` prefix but is local to `setup()`. Move to file-scope static (like other `g`-prefixed globals) or drop the `g` prefix. | Low |
+| 47 | `TEMP_CURVE_POINTS` macro still defined | **Done.** Removed dead macro and comment block from `halmet_config.h`. | Low |
+| 48 | Legacy voltage fault constants not removed | **Done.** Removed `COOLANT_VOLT_MIN_V` and `COOLANT_VOLT_MAX_V` from `halmet_config.h`. | Low |
+| 49 | Battery N2K send guard too loose | **Done.** Changed to `if (st->adsOk && st->supplyVoltageV > 0.0f)` in `n2k_publisher.cpp`. | Low |
+| 50 | `gVoltageMultiplier` declared inside `setup()` | **Done.** Renamed to `voltageMultiplier` (dropped `g` prefix). | Low |
 
 ## Candidate Pool — FROZEN (do not pick up unless explicitly ordered)
 

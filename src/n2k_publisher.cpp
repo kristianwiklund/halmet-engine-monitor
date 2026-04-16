@@ -70,7 +70,7 @@ void init(const InitParams& p) {
         N2kSenders::sendFluidLevel(*nmea, 0, N2kft_Fuel,
                                    st->tankLevelPct, povTankCap->get());
         N2kSenders::sendBinaryStatus(*nmea, 0, bilgeFan->relayOn());
-        if (st->supplyVoltageV > 0.0f) {
+        if (st->adsOk && st->supplyVoltageV > 0.0f) {
             N2kSenders::sendBatteryStatus(*nmea, 0, st->supplyVoltageV);
         }
     });

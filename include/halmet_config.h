@@ -80,21 +80,6 @@
 #define TANK_LEVEL_HIGH_PCT         87.5f   // no sensor triggered     (>= 3/4)
 #endif
 
-// ----------------------------------------------------------
-//  Temperature sender (Volvo Penta / VDO-type NTC)
-// ----------------------------------------------------------
-//  These are the (voltage, °C) calibration knots for the
-//  CurveInterpolator.  Voltage is what HALMET A1 measures when
-//  the original VP gauge is in parallel (gauge coil ~100 Ω).
-//  Adjust empirically during commissioning.
-//
-//  voltage (V)  →  temperature (°C)
-#define TEMP_CURVE_POINTS \
-    {3.10f, 40.0f}, \
-    {2.50f, 60.0f}, \
-    {1.80f, 80.0f}, \
-    {1.20f, 100.0f}, \
-    {0.70f, 120.0f}
 
 // ----------------------------------------------------------
 //  NMEA 2000
@@ -154,8 +139,6 @@
 // ----------------------------------------------------------
 #define COOLANT_RESISTANCE_MIN_OHM  5.0f    // below = shorted sender
 #define COOLANT_RESISTANCE_MAX_OHM  1000.0f // above = open sender
-#define COOLANT_VOLT_MIN_V          0.50f   // below = open/shorted sender (legacy A1)
-#define COOLANT_VOLT_MAX_V          3.50f   // above = open/shorted sender (legacy A1)
 
 // ----------------------------------------------------------
 //  INA226 current sensor (coolant temp sender)
