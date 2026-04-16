@@ -121,6 +121,12 @@ Issues found during code review. Grouped by severity.
 | 36 | Gobius mode missing Signal K output | The `#ifdef TANK_SENSOR_GOBIUS` path in `analog_inputs.cpp` updates `st->tankLevelPct` for N2K but never publishes to Signal K. The resistive path has `connect_to(new SKOutputFloat(...))` | Low |
 | 37 | Document `EngineState` single-task invariant | All fields are read/written from the Arduino `loop()` task only. Add a comment to `engine_state.h` noting this invariant so future changes don't introduce data races | Low |
 
+## Sprint 12 — Backlog
+
+| # | Feature | Description | Complexity |
+|---|---------|-------------|------------|
+| 38 | Configurable N2K engine instance | Replace compile-time `N2K_ENGINE_INSTANCE` with a `PersistingObservableValue<int>` (web UI config, range 0–252). Thread through to `engine_state_machine` and `n2k_publisher` PGN sends | Low |
+
 ## Candidate Pool — FROZEN (do not pick up unless explicitly ordered)
 
 Features evaluated and deliberately deferred. Do **not** schedule, implement, or re-evaluate these without a direct instruction from the project owner.
@@ -129,7 +135,6 @@ Features evaluated and deliberately deferred. Do **not** schedule, implement, or
 |---------|----------------|
 | Two-tank support (second PGN 127505 instance) | Single tank with two Gobius threshold sensors — no second tank to monitor |
 | Battery voltage on A4 (PGN 127508) | Victron equipment already provides battery monitoring on the N2K bus |
-| Configurable N2K engine instance | Single engine on the bus; no conflict risk with current installation |
 | Runtime-configurable temp curve | High complexity, low value for single-boat install. Compile-time `TEMP_CURVE_POINTS` in `halmet_config.h` is easy to edit and reflash. Risk of malformed runtime config producing silently wrong temperatures |
 | Engine hours counter | Persist accumulated runtime seconds to LittleFS in 1-minute increments. Send in PGN 127489 `EngineTotalHours`. Deferred — low priority for current usage pattern |
 | I2C LCD display (2×16 ASCII) showing engine temp, RPM, voltage (from N2K bus), configurable via web UI | Requires I2C display driver, N2K bus listener for voltage PGN, web UI config for display layout |
