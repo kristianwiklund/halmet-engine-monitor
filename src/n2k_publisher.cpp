@@ -43,9 +43,11 @@ void init(const InitParams& p) {
     EngineState*                       st         = p.state;
     tNMEA2000*                         nmea       = p.nmea2000;
     PersistingObservableValue<float>*  povTankCap  = p.tankCapacityL;
+    PersistingObservableValue<float>*  povEngInst  = p.engineInstance;
     int*                               owDest      = p.owDest;
     OneWireTemperature**               owSensors   = p.owSensors;
     BilgeFan*                          bilgeFan    = p.bilgeFan;
+    int n2kSlowMs = (int)p.intervalN2kSlow->get();
 
     // Register PGN 127501 (tx) and 127502 (rx) with the N2K stack
     sBilgeFan = bilgeFan;
@@ -55,14 +57,14 @@ void init(const InitParams& p) {
     nmea->ExtendReceiveMessages(kExtraRxPGNs);
     nmea->SetMsgHandler(handleSwitchBankControl);
 
-    // N2K slow PGNs: PGN 127489 + PGN 127505 + PGN 127501 (1 s)
-    event_loop()->onRepeat(INTERVAL_N2K_SLOW_MS, [st, nmea, povTankCap, bilgeFan]() {
+    // N2K slow PGNs: PGN 127489 + PGN 127505 + PGN 127501 (configurable)
+    event_loop()->onRepeat(n2kSlowMs, [st, nmea, povTankCap, povEngInst, bilgeFan]() {
         double coolantToSend = st->coolantK;
         if (st->coolantLastUpdateMs == 0 ||
             (millis() - st->coolantLastUpdateMs) > STALE_DATA_TIMEOUT_MS) {
             coolantToSend = N2kDoubleNA;
         }
-        N2kSenders::sendEngineDynamic(*nmea, N2K_ENGINE_INSTANCE,
+        N2kSenders::sendEngineDynamic(*nmea, (uint8_t)povEngInst->get(),
                                       coolantToSend,
                                       st->oilAlarm, st->tempAlarm);
         N2kSenders::sendFluidLevel(*nmea, 0, N2kft_Fuel,

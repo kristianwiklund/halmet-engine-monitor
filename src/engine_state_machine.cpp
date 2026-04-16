@@ -34,6 +34,8 @@ void init(const InitParams& p) {
     RpmSensor*                         rpm       = p.rpm;
     PersistingObservableValue<float>*  povPulses  = p.pulsesPerRev;
     PersistingObservableValue<float>*  povThresh  = p.runningThreshold;
+    PersistingObservableValue<float>*  povEngInst = p.engineInstance;
+    int rpmN2kMs = (int)p.intervalRpmN2k->get();
 
     // RPM measurement (10 Hz — feeds smoothing window and engine state)
     event_loop()->onRepeat(INTERVAL_RPM_MS, [st, rpm, povPulses, povThresh]() {
@@ -42,9 +44,9 @@ void init(const InitParams& p) {
         updateEngineState(st, rpmVal > povThresh->get());
     });
 
-    // PGN 127488 — Engine Rapid Update (4 Hz, decoupled from measurement)
-    event_loop()->onRepeat(INTERVAL_RPM_N2K_MS, [nmea, rpm]() {
-        N2kSenders::sendEngineRapidUpdate(*nmea, N2K_ENGINE_INSTANCE, rpm->getRpm());
+    // PGN 127488 — Engine Rapid Update (configurable, default 4 Hz)
+    event_loop()->onRepeat(rpmN2kMs, [nmea, rpm, povEngInst]() {
+        N2kSenders::sendEngineRapidUpdate(*nmea, (uint8_t)povEngInst->get(), rpm->getRpm());
     });
 }
 

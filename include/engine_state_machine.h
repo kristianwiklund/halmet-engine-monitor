@@ -20,6 +20,8 @@ struct InitParams {
     RpmSensor*                                  rpm;
     sensesp::PersistingObservableValue<float>*   pulsesPerRev;
     sensesp::PersistingObservableValue<float>*   runningThreshold;
+    sensesp::PersistingObservableValue<float>*   engineInstance;
+    sensesp::PersistingObservableValue<float>*   intervalRpmN2k;
 };
 
 void init(const InitParams& p);

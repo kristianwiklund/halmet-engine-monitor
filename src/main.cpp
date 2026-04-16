@@ -75,7 +75,14 @@ static EngineState gState;
 // ============================================================
 //  NMEA 2000 setup
 // ============================================================
-static void setupNmea2000() {
+struct N2kConfig {
+    uint16_t productCode;
+    uint8_t  deviceFunction;
+    uint8_t  deviceClass;
+    uint16_t manufacturerCode;
+};
+
+static void setupNmea2000(const N2kConfig& cfg) {
     // Derive a unique 21-bit device number from the chip's MAC address.
     // The N2K uniqueNumber field is 21 bits wide (max 2,097,151); passing a
     // larger value causes silent truncation in the library.
@@ -88,10 +95,10 @@ static void setupNmea2000() {
     uint8_t savedAddr = prefs.getUChar("addr", 23);
     prefs.end();
 
-    gNmea2000.SetProductInformation(N2K_DEVICE_SERIAL, N2K_PRODUCT_CODE,
+    gNmea2000.SetProductInformation(N2K_DEVICE_SERIAL, cfg.productCode,
                                     N2K_MODEL_ID, FW_VERSION_STR, "1.0.0");
-    gNmea2000.SetDeviceInformation(uniqueNum, N2K_DEVICE_FUNCTION,
-                                   N2K_DEVICE_CLASS, N2K_MANUFACTURER_CODE);
+    gNmea2000.SetDeviceInformation(uniqueNum, cfg.deviceFunction,
+                                   cfg.deviceClass, cfg.manufacturerCode);
     gNmea2000.SetN2kCANSendFrameBufSize(250);
     gNmea2000.SetN2kCANReceiveFrameBufSize(250);
     gNmea2000.SetMode(tNMEA2000::N2km_NodeOnly, savedAddr);
@@ -148,8 +155,8 @@ void setup() {
         ESP_LOGE("HALMET", "ADS1115 not found at 0x4B — will retry");
     }
 
-    // --- NMEA 2000 ---
-    setupNmea2000();
+    // --- NMEA 2000 (moved after app builder so PersistingObservableValue works) ---
+    // Config items created below, N2K init uses their persisted values.
 
     // --- SensESP v3 app builder ---
     SensESPAppBuilder builder;
@@ -205,6 +212,63 @@ void setup() {
     ConfigItem(gCoolantAlarmC)
         ->set_title("Coolant alarm threshold (°C)");
 
+    // --- N2K device config (requires restart) ---
+    auto* gN2kProductCode = new PersistingObservableValue<float>(
+        N2K_PRODUCT_CODE, "/n2k/product_code");
+    ConfigItem(gN2kProductCode)
+        ->set_title("N2K product code")
+        ->set_requires_restart(true);
+
+    auto* gN2kDeviceFunction = new PersistingObservableValue<float>(
+        N2K_DEVICE_FUNCTION, "/n2k/device_function");
+    ConfigItem(gN2kDeviceFunction)
+        ->set_title("N2K device function (160=Engine Gateway)")
+        ->set_requires_restart(true);
+
+    auto* gN2kDeviceClass = new PersistingObservableValue<float>(
+        N2K_DEVICE_CLASS, "/n2k/device_class");
+    ConfigItem(gN2kDeviceClass)
+        ->set_title("N2K device class (25=Propulsion)")
+        ->set_requires_restart(true);
+
+    auto* gN2kManufacturerCode = new PersistingObservableValue<float>(
+        N2K_MANUFACTURER_CODE, "/n2k/manufacturer_code");
+    ConfigItem(gN2kManufacturerCode)
+        ->set_title("N2K manufacturer code (999=uncertified)")
+        ->set_requires_restart(true);
+
+    auto* gN2kEngineInstance = new PersistingObservableValue<float>(
+        N2K_ENGINE_INSTANCE, "/n2k/engine_instance");
+    ConfigItem(gN2kEngineInstance)
+        ->set_title("N2K engine instance (0–252)");
+
+    // --- N2K send intervals (requires restart) ---
+    auto* gIntervalRpmN2k = new PersistingObservableValue<float>(
+        INTERVAL_RPM_N2K_MS, "/intervals/rpm_n2k_ms");
+    ConfigItem(gIntervalRpmN2k)
+        ->set_title("PGN 127488 send interval (ms)")
+        ->set_requires_restart(true);
+
+    auto* gIntervalN2kSlow = new PersistingObservableValue<float>(
+        INTERVAL_N2K_SLOW_MS, "/intervals/n2k_slow_ms");
+    ConfigItem(gIntervalN2kSlow)
+        ->set_title("PGN 127489/127505/127501 send interval (ms)")
+        ->set_requires_restart(true);
+
+    auto* gIntervalSkSupplemental = new PersistingObservableValue<float>(
+        INTERVAL_SK_SUPPLEMENTAL_MS, "/intervals/sk_supplemental_ms");
+    ConfigItem(gIntervalSkSupplemental)
+        ->set_title("Signal K supplemental data interval (ms)")
+        ->set_requires_restart(true);
+
+    // --- NMEA 2000 init (after config values are loaded) ---
+    setupNmea2000({
+        .productCode      = (uint16_t)gN2kProductCode->get(),
+        .deviceFunction   = (uint8_t)gN2kDeviceFunction->get(),
+        .deviceClass      = (uint8_t)gN2kDeviceClass->get(),
+        .manufacturerCode = (uint16_t)gN2kManufacturerCode->get(),
+    });
+
     // --- Signal K outputs for data with no NMEA 2000 PGN ---
 
     auto* skFanState = new SKOutputBool("electrical.switches.bilgeFan.state", "",
@@ -252,6 +316,8 @@ void setup() {
         .rpm              = &gRpm,
         .pulsesPerRev     = gPulsesPerRev,
         .runningThreshold = gEngineRunningRpm,
+        .engineInstance   = gN2kEngineInstance,
+        .intervalRpmN2k   = gIntervalRpmN2k,
     });
 
     analog_inputs::init({
@@ -268,6 +334,8 @@ void setup() {
         .state         = &gState,
         .nmea2000      = &gNmea2000,
         .tankCapacityL = gTankCapacityL,
+        .engineInstance = gN2kEngineInstance,
+        .intervalN2kSlow = gIntervalN2kSlow,
         .owDest        = owOut.owDest,
         .owSensors     = owOut.owSensors,
         .bilgeFan      = &gBilgeFan,
@@ -278,8 +346,9 @@ void setup() {
         gBilgeFan.update(gState.engineRunning, gPurgeDurationSec->get());
     });
 
-    // Signal K supplemental data
-    event_loop()->onRepeat(INTERVAL_SK_SUPPLEMENTAL_MS, [skFanState, skIgnState]() {
+    // Signal K supplemental data (configurable interval)
+    int skSupMs = (int)gIntervalSkSupplemental->get();
+    event_loop()->onRepeat(skSupMs, [skFanState, skIgnState]() {
         if (skFanState) skFanState->set(gBilgeFan.relayOn());
         if (skIgnState) skIgnState->set(digitalRead(HALMET_PIN_D4) == HIGH);
     });

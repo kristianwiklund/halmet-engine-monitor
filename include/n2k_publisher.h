@@ -23,6 +23,8 @@ struct InitParams {
     EngineState*                                state;
     tNMEA2000*                                  nmea2000;
     sensesp::PersistingObservableValue<float>*   tankCapacityL;
+    sensesp::PersistingObservableValue<float>*   engineInstance;
+    sensesp::PersistingObservableValue<float>*   intervalN2kSlow;
     int*                                         owDest;       // array[NUM_ONEWIRE_SLOTS]
     sensesp::onewire::OneWireTemperature**       owSensors;    // array[NUM_ONEWIRE_SLOTS]
     BilgeFan*                                    bilgeFan;
