@@ -186,9 +186,9 @@ A4 / ADS ch3 reads the supply voltage rail via the HALMET's onboard 20 kΩ/2.2 k
 
 Connect A4 to the ignition-switched +12 V supply (or directly to the battery positive terminal if always-on monitoring is preferred). No external resistors are needed — the HALMET's internal divider handles voltage scaling.
 
-The firmware multiplier (`/voltage/multiplier`, default 10.09) is runtime-configurable to compensate for resistor tolerance. Published as:
+The firmware multiplier (`/voltage/multiplier`, default 10.09) is runtime-configurable to compensate for resistor tolerance. The Signal K output path (`/voltage/sk_path`, default `electrical.batteries.0.voltage`) is also runtime-configurable via the web UI. Published as:
 - PGN 127508 (Battery Status), battery instance 0
-- SK path `electrical.batteries.0.voltage`
+- SK path configurable via `/voltage/sk_path` (default `electrical.batteries.0.voltage`)
 
 PGN 127508 is sent only when `adsOk` is true and `supplyVoltageV > 0.0`, to avoid transmitting zero/garbage readings during startup or I2C fault.
 
@@ -333,6 +333,7 @@ Coolant temperature is **not** part of this system — it is derived via the INA
 | `/coolant/warn_threshold_c` | 95 °C | Coolant temperature Signal K "warn" notification threshold |
 | `/coolant/alarm_threshold_c` | 105 °C | Coolant temperature Signal K "alarm" notification threshold |
 | `/voltage/multiplier` | 10.09 | A4 voltage divider multiplier. HALMET onboard divider = (20 kΩ + 2.2 kΩ) / 2.2 kΩ = 10.09. Adjust if resistor values differ. |
+| `/voltage/sk_path` | `electrical.batteries.0.voltage` | Signal K path for battery voltage output. Runtime-configurable — no restart required. |
 | `/n2k/engine_instance` | 0 | NMEA 2000 engine instance number (0–252) |
 | `/n2k/product_code` | 100 | N2K product code. Requires restart. |
 | `/n2k/device_function` | 160 | N2K device function (160 = Engine Gateway). Requires restart. |

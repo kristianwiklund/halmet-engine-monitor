@@ -87,6 +87,7 @@ All runtime parameters are adjustable via the SensESP web UI at
 | `/coolant/warn_threshold_c` | 95 °C | Signal K warn notification threshold |
 | `/coolant/alarm_threshold_c` | 105 °C | Signal K alarm notification threshold |
 | `/voltage/multiplier` | 10.09 | A4 voltage divider multiplier. HALMET uses 20 kΩ/2.2 kΩ → (20+2.2)/2.2 = 10.09. Adjust if resistors differ. |
+| `/voltage/sk_path` | `electrical.batteries.0.voltage` | Signal K path for battery voltage output. |
 | `/n2k/engine_instance` | 0 | NMEA 2000 engine instance (0–252) |
 | `/n2k/product_code` | 100 | N2K product code (requires restart) |
 | `/n2k/device_function` | 160 | N2K device function — 160 = Engine Gateway (requires restart) |

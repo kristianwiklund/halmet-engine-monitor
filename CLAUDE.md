@@ -67,6 +67,7 @@ Runtime parameters editable via SensESP web UI at `http://halmet-engine.local/co
 - `/coolant/warn_threshold_c` — coolant warn notification threshold (default 95 °C)
 - `/coolant/alarm_threshold_c` — coolant alarm notification threshold (default 105 °C)
 - `/voltage/multiplier` — A4 voltage divider multiplier (default 10.09 for HALMET 20 kΩ/2.2 kΩ divider)
+- `/voltage/sk_path` — Signal K path for battery voltage output (default `electrical.batteries.0.voltage`)
 - `/n2k/engine_instance` — NMEA 2000 engine instance number (default 0)
 - `/n2k/product_code`, `/n2k/device_function`, `/n2k/device_class`, `/n2k/manufacturer_code` — N2K device identity constants. Require restart after change.
 - `/intervals/rpm_n2k_ms`, `/intervals/n2k_slow_ms`, `/intervals/sk_supplemental_ms` — PGN and SK send intervals in ms. Require restart after change.
