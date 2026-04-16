@@ -178,3 +178,8 @@
 #define INTERVAL_SK_SUPPLEMENTAL_MS     5000    // SK-only data (fan state, ignition)
 #define INTERVAL_DIAG_MS                10000   // Diagnostics heartbeat
 #define INTERVAL_ONEWIRE_DIAG_MS        10000   // 1-Wire sensor list to SK
+
+// ----------------------------------------------------------
+//  Hardware watchdog
+// ----------------------------------------------------------
+#define WATCHDOG_TIMEOUT_MS             8000

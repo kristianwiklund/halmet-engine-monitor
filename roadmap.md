@@ -53,13 +53,7 @@ All items implemented and verified on hardware (commit `0af9730`).
 | 13 | Shared state struct | Replace scattered `static` globals with a single `EngineState` struct. Required before the module split so all modules can read/write shared data without cross-including each other | Low |
 | 14 | Decompose monolithic setup() | Split `main.cpp` into focused modules (analog_inputs, digital_alarms, engine_state, n2k_publisher, diagnostics). Each module exposes an `init()` function that registers its own event-loop callbacks | Medium |
 
-## Sprint 5 — OTA Robustness & Watchdog
-
-Depends on Sprint 3 item 9 (relay safety) being verified on hardware before item 12 is merged.
-
-| # | Feature | Description | Complexity |
-|---|---------|-------------|------------|
-| 12 | Hardware watchdog | Register ESP32 task watchdog (~8 s timeout); reset in `loop()` and inside analog callback after I2C reads. Must deregister from TWDT during OTA (`esp_task_wdt_delete`), not just reset — OTA blocks `loop()` for 30–90 s | Low |
+## Sprint 5 — OTA Robustness & Watchdog (COMPLETE — see Sprint 11 #27)
 
 ## Sprint 6 — Sensor-Centric 1-Wire Configuration (COMPLETE)
 
@@ -105,7 +99,7 @@ Issues found during code review. Grouped by severity.
 
 | # | Issue | Description | Complexity |
 |---|-------|-------------|------------|
-| 27 | Hardware watchdog (promote from Sprint 5) | Still the most important missing safety feature. A hung ESP32 means silent loss of all alarms. Deregister from TWDT during OTA (`esp_task_wdt_delete` in `ArduinoOTA.onStart`), reset in `loop()` | Low |
+| 27 | Hardware watchdog (consolidated from Sprint 5 #12) | Register ESP32 task watchdog (~8 s timeout); reset in `loop()`. Deregister from TWDT during OTA (`esp_task_wdt_delete` in `ArduinoOTA.onStart`) — OTA blocks `loop()` for 30–90 s. Prerequisite (Sprint 3 #9 relay safety) is done | Low |
 | 28 | Bilge fan manual override vs engine start | `manualOn()` latches relay ON, but if the engine starts while latched, the fan stays on through `RUNNING` state — opposite of design intent. Clear `_manualOverride` and call `setRelay(false)` on transition to `RUNNING` | Low |
 | 29 | Decouple RPM N2K send rate from measurement rate | `engine_state_machine.cpp` sends PGN 127488 every 100 ms (10 Hz). RPM *calculation* should stay at 10 Hz for smoothing, but the N2K *send* should be a separate callback at 2–4 Hz to reduce bus load | Low |
 | 30 | RpmSensor static ISR — enforce single instance | `_pulseCount` / `_lastPulseTime` are static; a second `RpmSensor` instance would silently share state. Add a guard in `begin()` | Low |

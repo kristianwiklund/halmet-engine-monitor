@@ -38,6 +38,7 @@
 #include <ArduinoOTA.h>
 #include <NMEA2000_esp32.h>
 #include <Preferences.h>
+#include <esp_task_wdt.h>
 
 // --- Adafruit ADS1115 ---
 #include <Adafruit_ADS1X15.h>
@@ -219,8 +220,9 @@ void setup() {
     // --- OTA safety: force relay OFF before firmware write begins ---
     event_loop()->onDelay(0, []() {
         ArduinoOTA.onStart([]() {
+            esp_task_wdt_delete(NULL);
             gBilgeFan.forceOff();
-            ESP_LOGW("HALMET", "OTA starting — relay forced OFF");
+            ESP_LOGW("HALMET", "OTA starting — watchdog removed, relay forced OFF");
         });
     });
 
@@ -284,6 +286,15 @@ void setup() {
 
     diagnostics::init(&gState);
 
+    // --- Hardware watchdog (must be last in setup) ---
+    esp_task_wdt_config_t wdt_config = {
+        .timeout_ms = WATCHDOG_TIMEOUT_MS,
+        .idle_core_mask = 0,
+        .trigger_panic = true,
+    };
+    esp_task_wdt_init(&wdt_config);
+    esp_task_wdt_add(NULL);
+
     ESP_LOGI("HALMET", "Setup complete.");
 }
 
@@ -291,5 +302,6 @@ void setup() {
 //  Arduino loop() — SensESP v3: just tick the event loop
 // ============================================================
 void loop() {
+    esp_task_wdt_reset();
     event_loop()->tick();
 }
