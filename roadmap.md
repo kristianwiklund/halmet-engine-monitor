@@ -121,14 +121,19 @@ Issues found during code review. Grouped by severity.
 | 36 | Gobius mode missing Signal K output | The `#ifdef TANK_SENSOR_GOBIUS` path in `analog_inputs.cpp` updates `st->tankLevelPct` for N2K but never publishes to Signal K. The resistive path has `connect_to(new SKOutputFloat(...))` | Low |
 | 37 | Document `EngineState` single-task invariant | All fields are read/written from the Arduino `loop()` task only. Add a comment to `engine_state.h` noting this invariant so future changes don't introduce data races | Low |
 
-## Sprint 12 — Backlog
+## Sprint 12 — Web UI Configuration
 
 | # | Feature | Description | Complexity |
 |---|---------|-------------|------------|
 | 38 | Configurable N2K engine instance | Replace compile-time `N2K_ENGINE_INSTANCE` with a `PersistingObservableValue<int>` (web UI config, range 0–252). Thread through to `engine_state_machine` and `n2k_publisher` PGN sends | Low |
 | 39 | Configurable send intervals | Replace compile-time `INTERVAL_RPM_N2K_MS`, `INTERVAL_N2K_SLOW_MS`, `INTERVAL_SK_SUPPLEMENTAL_MS` with `PersistingObservableValue<int>` web UI config items. Requires re-registering `onRepeat` callbacks or using dynamic interval checks | Medium |
 | 40 | Configurable N2K device constants | Replace compile-time `N2K_PRODUCT_CODE`, `N2K_DEVICE_FUNCTION`, `N2K_DEVICE_CLASS`, `N2K_MANUFACTURER_CODE` with web UI config items. Requires restart after change (N2K device info is set once at init) | Low |
-| 41 | Battery voltage sensing on A4 | Read supply voltage on ADS ch3 (A4). Publish as PGN 127508 (Battery Status) and SK `electrical.batteries.0.voltage`. Also used as reference voltage for coolant temp ratio calculation (see #42) | Low |
+
+## Sprint 13 — Battery Voltage & Coolant Temp Accuracy
+
+| # | Feature | Description | Complexity |
+|---|---------|-------------|------------|
+| 41 | Battery voltage sensing on A4 | Read supply voltage on ADS ch3 (A4). Wire to ignition-switched +12V rail — HALMET onboard 0–32V conditioning handles scaling. Publish as PGN 127508 (Battery Status) and SK `electrical.batteries.0.voltage`. Also used as reference voltage for #42 | Low |
 | 42 | Coolant temp voltage-ratio correction | Use A4 supply voltage (#41) to compute voltage ratio at A1 instead of raw voltage. Makes coolant temp reading independent of battery/alternator voltage swings (12.2–14.4 V). Update curve to use ratio→°C instead of voltage→°C | Medium |
 
 ## Candidate Pool — FROZEN (do not pick up unless explicitly ordered)
