@@ -135,6 +135,7 @@ Issues found during code review. Grouped by severity.
 |---|---------|-------------|------------|
 | 41 | Battery voltage sensing on A4 | Read supply voltage on ADS ch3 (A4). Wire to ignition-switched +12V rail — HALMET onboard 0–32V conditioning handles scaling. Publish as PGN 127508 (Battery Status) and SK `electrical.batteries.0.voltage`. Also used as reference voltage for #42 | Low |
 | 42 | Coolant temp voltage-ratio correction | Use A4 supply voltage (#41) to compute voltage ratio at A1 instead of raw voltage. Makes coolant temp reading independent of battery/alternator voltage swings (12.2–14.4 V). Update curve to use ratio→°C instead of voltage→°C | Medium |
+| 43 | Runtime-configurable temp curve | Replace compile-time `TEMP_CURVE_POINTS` and hand-rolled `voltageToCelsius()` with a `CurveInterpolator` (same as tank level). Web UI calibration table, persisted to flash. Seed with VDO Type A defaults. Curve input changes from raw voltage to voltage ratio if #42 is done first | Medium |
 
 ## Candidate Pool — FROZEN (do not pick up unless explicitly ordered)
 
@@ -143,7 +144,6 @@ Features evaluated and deliberately deferred. Do **not** schedule, implement, or
 | Feature | Reason deferred |
 |---------|----------------|
 | Two-tank support (second PGN 127505 instance) | Single tank with two Gobius threshold sensors — no second tank to monitor |
-| Runtime-configurable temp curve | High complexity, low value for single-boat install. Compile-time `TEMP_CURVE_POINTS` in `halmet_config.h` is easy to edit and reflash. Risk of malformed runtime config producing silently wrong temperatures |
 | Engine hours counter | Persist accumulated runtime seconds to LittleFS in 1-minute increments. Send in PGN 127489 `EngineTotalHours`. Deferred — low priority for current usage pattern |
 | I2C LCD display (2×16 ASCII) showing engine temp, RPM, voltage (from N2K bus), configurable via web UI | Requires I2C display driver, N2K bus listener for voltage PGN, web UI config for display layout |
 | Live temperature in 1-Wire config card description (#18) | Low priority UX polish; sensors can be identified by warming/cooling and checking SK diagnostics output |
