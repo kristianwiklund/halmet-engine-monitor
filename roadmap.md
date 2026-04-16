@@ -112,7 +112,7 @@ Issues found during code review. Grouped by severity.
 | 32 | Magic numbers in N2K setup | Product code `100`, device function `160`, device class `25`, manufacturer code `999` are inline in `setupNmea2000()`. Move to named constants in `halmet_config.h` | Low |
 | 33 | OTA password mismatch | `platformio.ini` hardcodes `"SomeOTAPassword"` in `[env:halmet-ota]` and in `builder.enable_ota()`. Both should come from `secrets.h` | Low |
 | 34 | Extract `SwitchMetadata` from `main.cpp` | One-off inner class clutters main. Move to a small header | Low |
-| 35 | `FW_VERSION_STR` single source of truth | Defined as a `-D` build flag in `platformio.ini`; easy to forget to update. Consider generating from a `version.h` or a pre-build script | Low |
+| 35 | `FW_VERSION_STR` from git tag | Pre-build script (`get_version.py`) runs `git describe --tags --always` and injects `-D FW_VERSION_STR=...` into build_flags. Remove hardcoded version from `platformio.ini`. Tag repo with `v1.2.0` to seed. Dev builds automatically show commit distance (e.g. `v1.2.0-3-gabcdef1`) | Low |
 
 ### Functional Gaps
 
