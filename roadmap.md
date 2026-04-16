@@ -126,6 +126,8 @@ Issues found during code review. Grouped by severity.
 | # | Feature | Description | Complexity |
 |---|---------|-------------|------------|
 | 38 | Configurable N2K engine instance | Replace compile-time `N2K_ENGINE_INSTANCE` with a `PersistingObservableValue<int>` (web UI config, range 0–252). Thread through to `engine_state_machine` and `n2k_publisher` PGN sends | Low |
+| 39 | Configurable send intervals | Replace compile-time `INTERVAL_RPM_N2K_MS`, `INTERVAL_N2K_SLOW_MS`, `INTERVAL_SK_SUPPLEMENTAL_MS` with `PersistingObservableValue<int>` web UI config items. Requires re-registering `onRepeat` callbacks or using dynamic interval checks | Medium |
+| 40 | Configurable N2K device constants | Replace compile-time `N2K_PRODUCT_CODE`, `N2K_DEVICE_FUNCTION`, `N2K_DEVICE_CLASS`, `N2K_MANUFACTURER_CODE` with web UI config items. Requires restart after change (N2K device info is set once at init) | Low |
 
 ## Candidate Pool — FROZEN (do not pick up unless explicitly ordered)
 
@@ -138,7 +140,5 @@ Features evaluated and deliberately deferred. Do **not** schedule, implement, or
 | Runtime-configurable temp curve | High complexity, low value for single-boat install. Compile-time `TEMP_CURVE_POINTS` in `halmet_config.h` is easy to edit and reflash. Risk of malformed runtime config producing silently wrong temperatures |
 | Engine hours counter | Persist accumulated runtime seconds to LittleFS in 1-minute increments. Send in PGN 127489 `EngineTotalHours`. Deferred — low priority for current usage pattern |
 | I2C LCD display (2×16 ASCII) showing engine temp, RPM, voltage (from N2K bus), configurable via web UI | Requires I2C display driver, N2K bus listener for voltage PGN, web UI config for display layout |
-| Web UI configurable send intervals (RPM N2K rate, slow PGN rate, SK supplemental rate, etc.) | Current compile-time defines work fine; runtime tuning adds complexity with little benefit unless multiple installations need different rates |
-| Web UI configurable N2K device constants (product code, device function/class, manufacturer code) | Single-boat install with no conflicts; changing these requires understanding the N2K spec — exposing them in the UI risks misconfiguration |
 | Live temperature in 1-Wire config card description (#18) | Low priority UX polish; sensors can be identified by warming/cooling and checking SK diagnostics output |
 | Hot-reload 1-Wire sensor assignments without restart (#19) | Medium complexity; SensESP has a restart button in the navbar that serves as a workaround |
