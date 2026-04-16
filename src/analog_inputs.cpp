@@ -88,7 +88,8 @@ void init(const InitParams& p) {
 
 #ifdef TANK_SENSOR_GOBIUS
     // Gobius Pro binary threshold sensors on ADS ch1 + ch2 (500 ms)
-    event_loop()->onRepeat(INTERVAL_TANK_MS, [st, ads]() {
+    auto* skTankLevel = new SKOutputFloat("tanks.fuel.0.currentLevel");
+    event_loop()->onRepeat(INTERVAL_TANK_MS, [st, ads, skTankLevel]() {
         if (!st->adsOk) return;
         bool below3q = ads->computeVolts(ads->readADC_SingleEnded(1))
                        < GOBIUS_THRESHOLD_VOLTAGE;
@@ -98,6 +99,8 @@ void init(const InitParams& p) {
         if (below1q)      st->tankLevelPct = TANK_LEVEL_LOW_PCT;
         else if (below3q) st->tankLevelPct = TANK_LEVEL_MID_PCT;
         else              st->tankLevelPct = TANK_LEVEL_HIGH_PCT;
+
+        skTankLevel->set(st->tankLevelPct / 100.0f);
     });
 #else
     // Resistive sender on ADS ch1 via 10 mA constant-current source (500 ms)
