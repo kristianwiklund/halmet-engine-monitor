@@ -43,6 +43,9 @@
 // --- Adafruit ADS1115 ---
 #include <Adafruit_ADS1X15.h>
 
+// --- INA226 current sensor ---
+#include <INA226_WE.h>
+
 // --- Project modules ---
 #include "secrets.h"
 #include "halmet_config.h"
@@ -64,6 +67,7 @@ using namespace sensesp;
 // ============================================================
 static tNMEA2000_esp32  gNmea2000;
 static Adafruit_ADS1115 gAds;
+static INA226_WE        gIna226(INA226_I2C_ADDRESS);
 static RpmSensor        gRpm(HALMET_PIN_D1);
 static BilgeFan         gBilgeFan(HALMET_PIN_RELAY, /*activeHigh=*/true);
 
@@ -110,6 +114,7 @@ static void setupNmea2000(const N2kConfig& cfg) {
         127489UL,   // Engine Dynamic Parameters (coolant temp, oil alarm)
         127501UL,   // Binary Switch Bank Status (bilge fan relay)
         127505UL,   // Fluid Level (tank)
+        127508UL,   // Battery Status (supply voltage)
         130316UL,   // Temperature Extended Range (1-Wire sensors)
         0
     };
@@ -153,6 +158,15 @@ void setup() {
     } else {
         gState.adsFailCount++;
         ESP_LOGE("HALMET", "ADS1115 not found at 0x4B — will retry");
+    }
+
+    // --- INA226 current sensor (coolant temp sender) ---
+    if (gIna226.init()) {
+        gIna226.setResistorRange(INA226_SHUNT_RESISTANCE_OHM, 1.0);  // 1A max expected
+        gIna226.setAverage(INA226_AVERAGE_64);
+        ESP_LOGI("HALMET", "INA226 found at 0x%02X", INA226_I2C_ADDRESS);
+    } else {
+        ESP_LOGE("HALMET", "INA226 not found at 0x%02X", INA226_I2C_ADDRESS);
     }
 
     // --- NMEA 2000 (moved after app builder so PersistingObservableValue works) ---
@@ -211,6 +225,11 @@ void setup() {
         DEFAULT_COOLANT_ALARM_C, "/coolant/alarm_threshold_c");
     ConfigItem(gCoolantAlarmC)
         ->set_title("Coolant alarm threshold (°C)");
+
+    auto* gVoltageMultiplier = new PersistingObservableValue<float>(
+        DEFAULT_VOLTAGE_MULTIPLIER, "/voltage/multiplier");
+    ConfigItem(gVoltageMultiplier)
+        ->set_title("A4 voltage divider multiplier (20k/2.2k = 10.09)");
 
     // --- N2K device config (requires restart) ---
     auto* gN2kProductCode = new PersistingObservableValue<float>(
@@ -323,9 +342,11 @@ void setup() {
     analog_inputs::init({
         .state                 = &gState,
         .ads                   = &gAds,
+        .ina226                = &gIna226,
         .skCoolantNotification = skCoolantNotification,
         .coolantWarnC          = gCoolantWarnC,
         .coolantAlarmC         = gCoolantAlarmC,
+        .voltageMultiplier     = gVoltageMultiplier,
     });
 
     digital_alarms::init(&gState);

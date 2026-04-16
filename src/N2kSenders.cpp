@@ -98,4 +98,15 @@ void sendTemperatureExtended(tNMEA2000&     nmea2000,
     nmea2000.SendMsg(msg);
 }
 
+// ----------------------------------------------------------
+void sendBatteryStatus(tNMEA2000& nmea2000,
+                       uint8_t    batteryInstance,
+                       double     voltage,
+                       double     current,
+                       double     temperature) {
+    tN2kMsg msg;
+    SetN2kDCBatStatus(msg, batteryInstance, voltage, current, temperature);
+    nmea2000.SendMsg(msg);
+}
+
 }  // namespace N2kSenders

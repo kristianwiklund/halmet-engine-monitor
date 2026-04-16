@@ -43,4 +43,10 @@ struct EngineState {
     // Written by analog_inputs (ADS recovery)
     bool     adsOk        = false;
     uint32_t adsFailCount = 0;
+
+    // Written by analog_inputs (battery voltage)
+    float    supplyVoltageV     = 0.0f;
+
+    // Written by analog_inputs (INA226 coolant sender)
+    float    senderResistanceOhm = NAN;
 };

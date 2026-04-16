@@ -1,5 +1,6 @@
 // ============================================================
-//  analog_inputs.cpp — Coolant temp, tank level, ADS1115 recovery
+//  analog_inputs.cpp — Coolant temp (INA226), tank level,
+//                      battery voltage, ADS1115 recovery
 // ============================================================
 
 #include "analog_inputs.h"
@@ -8,6 +9,7 @@
 #include <Wire.h>
 #include <cmath>
 #include <Adafruit_ADS1X15.h>
+#include <INA226_WE.h>
 #include <N2kMsg.h>
 #include <sensesp.h>
 #include <sensesp/sensors/sensor.h>
@@ -23,66 +25,92 @@ using namespace sensesp;
 
 namespace analog_inputs {
 
-// ---- Voltage → Temperature curve (VP / VDO NTC sender) ----
-struct CurvePoint { float v; float c; };
-static const CurvePoint kTempCurve[] = { TEMP_CURVE_POINTS };
-static constexpr int kTempCurveLen = sizeof(kTempCurve) / sizeof(CurvePoint);
+// Helper: update coolant alert state and emit SK notification
+static void updateCoolantAlert(EngineState* st, float celsius,
+                               PersistingObservableValue<float>* povWarn,
+                               PersistingObservableValue<float>* povAlarm,
+                               SKOutputRawJson* skNotif) {
+    float warnC  = povWarn  ? povWarn->get()  : DEFAULT_COOLANT_WARN_C;
+    float alarmC = povAlarm ? povAlarm->get() : DEFAULT_COOLANT_ALARM_C;
+    auto newState = CoolantAlertState::NORMAL;
+    if (celsius >= alarmC)      newState = CoolantAlertState::ALARM;
+    else if (celsius >= warnC)  newState = CoolantAlertState::WARN;
 
-static float voltageToCelsius(float volt) {
-    if (volt < COOLANT_VOLT_MIN_V || volt > COOLANT_VOLT_MAX_V) return NAN;
-
-    if (volt <= kTempCurve[kTempCurveLen - 1].v) return kTempCurve[kTempCurveLen - 1].c;
-    if (volt >= kTempCurve[0].v)                 return kTempCurve[0].c;
-    for (int i = 0; i < kTempCurveLen - 1; i++) {
-        if (volt <= kTempCurve[i].v && volt > kTempCurve[i + 1].v) {
-            float ratio = (volt - kTempCurve[i + 1].v)
-                        / (kTempCurve[i].v - kTempCurve[i + 1].v);
-            return kTempCurve[i + 1].c + ratio * (kTempCurve[i].c - kTempCurve[i + 1].c);
+    if (newState != st->coolantAlertState) {
+        st->coolantAlertState = newState;
+        if (skNotif) {
+            if (newState == CoolantAlertState::NORMAL) {
+                skNotif->set("null");
+            } else {
+                const char* state = (newState == CoolantAlertState::ALARM) ? "alarm" : "warn";
+                char buf[192];
+                snprintf(buf, sizeof(buf),
+                    "{\"state\":\"%s\",\"method\":[\"visual\",\"sound\"],"
+                    "\"message\":\"Coolant %.0f°C (%s threshold)\"}",
+                    state, celsius, state);
+                skNotif->set(String(buf));
+            }
         }
     }
-    return NAN;
 }
 
 void init(const InitParams& p) {
     EngineState*                       st      = p.state;
     Adafruit_ADS1115*                  ads     = p.ads;
+    INA226_WE*                         ina     = p.ina226;
     SKOutputRawJson*                   skNotif = p.skCoolantNotification;
     PersistingObservableValue<float>*  povWarn  = p.coolantWarnC;
     PersistingObservableValue<float>*  povAlarm = p.coolantAlarmC;
 
-    // Coolant temp read (200 ms)
-    event_loop()->onRepeat(INTERVAL_ANALOG_MS, [st, ads, skNotif, povWarn, povAlarm]() {
-        if (!st->adsOk) return;
-        float volts0 = ads->computeVolts(ads->readADC_SingleEnded(0));
-        float celsius = voltageToCelsius(volts0);
+    // ---- Coolant temp via INA226 (resistance → °C) ----
+    auto* resCurve = new CurveInterpolator(nullptr, "/coolant/resistance_curve");
+    resCurve->set_input_title("Sender Resistance (ohms)")
+            ->set_output_title("Temperature (°C)");
+
+    if (resCurve->get_samples().empty()) {
+        // Default: VDO Type A (European) NTC curve
+        resCurve->clear_samples();
+        resCurve->add_sample(CurveInterpolator::Sample(287.0, 40.0));
+        resCurve->add_sample(CurveInterpolator::Sample(187.0, 50.0));
+        resCurve->add_sample(CurveInterpolator::Sample(124.0, 60.0));
+        resCurve->add_sample(CurveInterpolator::Sample(84.0,  70.0));
+        resCurve->add_sample(CurveInterpolator::Sample(58.5,  80.0));
+        resCurve->add_sample(CurveInterpolator::Sample(41.0,  90.0));
+        resCurve->add_sample(CurveInterpolator::Sample(29.7, 100.0));
+        resCurve->add_sample(CurveInterpolator::Sample(21.5, 110.0));
+        resCurve->add_sample(CurveInterpolator::Sample(16.0, 120.0));
+    }
+
+    ConfigItem(resCurve)
+        ->set_title("Coolant temperature curve")
+        ->set_description("Sender resistance (ohms) to temperature (°C). Default: VDO Type A (European)");
+
+    event_loop()->onRepeat(INTERVAL_INA226_MS, [st, ina, resCurve, skNotif, povWarn, povAlarm]() {
+        if (!ina) return;
+        float busV   = ina->getBusVoltage_V();
+        float shuntI = ina->getCurrent_mA() / 1000.0f;  // convert to A
+        if (shuntI <= 0.001f) {
+            st->coolantK = N2kDoubleNA;
+            st->senderResistanceOhm = NAN;
+            return;
+        }
+        float resistance = busV / shuntI;
+        st->senderResistanceOhm = resistance;
+
+        if (resistance < COOLANT_RESISTANCE_MIN_OHM || resistance > COOLANT_RESISTANCE_MAX_OHM) {
+            st->coolantK = N2kDoubleNA;
+            return;
+        }
+
+        // Feed resistance into CurveInterpolator
+        resCurve->set(resistance);
+        float celsius = resCurve->get();
         if (std::isnan(celsius)) {
             st->coolantK = N2kDoubleNA;
         } else {
-            st->coolantK = celsius + 273.15f;
+            st->coolantK = celsius + 273.15;
             st->coolantLastUpdateMs = millis();
-
-            float warnC  = povWarn  ? povWarn->get()  : DEFAULT_COOLANT_WARN_C;
-            float alarmC = povAlarm ? povAlarm->get() : DEFAULT_COOLANT_ALARM_C;
-            auto newState = CoolantAlertState::NORMAL;
-            if (celsius >= alarmC)      newState = CoolantAlertState::ALARM;
-            else if (celsius >= warnC)  newState = CoolantAlertState::WARN;
-
-            if (newState != st->coolantAlertState) {
-                st->coolantAlertState = newState;
-                if (skNotif) {
-                    if (newState == CoolantAlertState::NORMAL) {
-                        skNotif->set("null");
-                    } else {
-                        const char* state = (newState == CoolantAlertState::ALARM) ? "alarm" : "warn";
-                        char buf[192];
-                        snprintf(buf, sizeof(buf),
-                            "{\"state\":\"%s\",\"method\":[\"visual\",\"sound\"],"
-                            "\"message\":\"Coolant %.0f°C (%s threshold)\"}",
-                            state, celsius, state);
-                        skNotif->set(String(buf));
-                    }
-                }
-            }
+            updateCoolantAlert(st, celsius, povWarn, povAlarm, skNotif);
         }
     });
 
@@ -139,6 +167,16 @@ void init(const InitParams& p) {
         }
     });
 #endif
+
+    // Battery voltage on A4 / ADS ch3
+    PersistingObservableValue<float>* povVoltMul = p.voltageMultiplier;
+    auto* skVoltage = new SKOutputFloat("electrical.batteries.0.voltage");
+    event_loop()->onRepeat(INTERVAL_VOLTAGE_MS, [st, ads, povVoltMul, skVoltage]() {
+        if (!st->adsOk) return;
+        float v = ads->computeVolts(ads->readADC_SingleEnded(VOLTAGE_CHANNEL));
+        st->supplyVoltageV = v * povVoltMul->get();
+        skVoltage->set(st->supplyVoltageV);
+    });
 
     // ADS1115 I2C recovery (retry when not present)
     event_loop()->onRepeat(INTERVAL_ADS_RETRY_MS, [st, ads]() {

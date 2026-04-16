@@ -67,4 +67,14 @@ void sendTemperatureExtended(tNMEA2000&             nmea2000,
                              double                 actualTempK,
                              double                 setTempK = N2kDoubleNA);
 
+// ----------------------------------------------------------
+//  PGN 127508 — Battery Status  (1 Hz)
+//  Sends: battery voltage
+// ----------------------------------------------------------
+void sendBatteryStatus(tNMEA2000& nmea2000,
+                       uint8_t    batteryInstance,
+                       double     voltage,
+                       double     current    = N2kDoubleNA,
+                       double     temperature = N2kDoubleNA);
+
 }  // namespace N2kSenders

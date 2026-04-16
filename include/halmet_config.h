@@ -142,10 +142,27 @@
 #define INTERVAL_ADS_RETRY_MS       5000
 
 // ----------------------------------------------------------
+//  Battery voltage sensing (A4 / ADS ch3)
+//  HALMET analog input divider: 20 kΩ / 2.2 kΩ = 10.09:1
+// ----------------------------------------------------------
+#define VOLTAGE_CHANNEL             3
+#define DEFAULT_VOLTAGE_MULTIPLIER  10.09f  // (20k + 2.2k) / 2.2k
+#define INTERVAL_VOLTAGE_MS         1000
+
+// ----------------------------------------------------------
 //  Coolant sensor fault detection
 // ----------------------------------------------------------
-#define COOLANT_VOLT_MIN_V          0.50f   // below = open/shorted sender
-#define COOLANT_VOLT_MAX_V          3.50f   // above = open/shorted sender
+#define COOLANT_RESISTANCE_MIN_OHM  5.0f    // below = shorted sender
+#define COOLANT_RESISTANCE_MAX_OHM  1000.0f // above = open sender
+#define COOLANT_VOLT_MIN_V          0.50f   // below = open/shorted sender (legacy A1)
+#define COOLANT_VOLT_MAX_V          3.50f   // above = open/shorted sender (legacy A1)
+
+// ----------------------------------------------------------
+//  INA226 current sensor (coolant temp sender)
+// ----------------------------------------------------------
+#define INA226_I2C_ADDRESS          0x40    // A0=GND, A1=GND (default)
+#define INA226_SHUNT_RESISTANCE_OHM 0.1f   // 100 mΩ shunt resistor
+#define INTERVAL_INA226_MS          500
 
 // ----------------------------------------------------------
 //  Coolant temperature threshold alerting
