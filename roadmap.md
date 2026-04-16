@@ -70,12 +70,7 @@ Inverted the config model from slot-centric (6 anonymous slots) to sensor-centri
 | 17a | Bus scan + ROM-based diagnostics (SK JSON with address, dest, slot, tempK per sensor) | Done |
 | 17b | Sensor-centric web UI: each detected sensor gets a config card titled with its ROM address and a dropdown to pick destination | Done |
 
-## Sprint 7 — 1-Wire UX Polish
-
-| # | Feature | Description | Complexity |
-|---|---------|-------------|------------|
-| 18 | Live temperature in config card description | Update each sensor's config card description with the current reading every 10 s (e.g. "Currently: 22.3 °C"). Lets user identify sensors by warming/cooling them without needing to match ROM addresses. The periodic callback and description updater already exist; needs wiring to the read cycle so unassigned sensors also show temps | Low |
-| 19 | Hot-reload sensor assignments (remove requires_restart) | Re-run slot assignment + OWT creation dynamically when a dropdown is saved, so users don't need to reboot. SensESP has a restart button in the header navbar but it's easy to miss from the config page | Medium |
+## Sprint 7 — 1-Wire UX Polish (DEFERRED — items moved to Candidate Pool)
 
 ## Sprint 8 — N2K Bilge Fan Switch Control (COMPLETE)
 
@@ -146,3 +141,5 @@ Features evaluated and deliberately deferred. Do **not** schedule, implement, or
 | I2C LCD display (2×16 ASCII) showing engine temp, RPM, voltage (from N2K bus), configurable via web UI | Requires I2C display driver, N2K bus listener for voltage PGN, web UI config for display layout |
 | Web UI configurable send intervals (RPM N2K rate, slow PGN rate, SK supplemental rate, etc.) | Current compile-time defines work fine; runtime tuning adds complexity with little benefit unless multiple installations need different rates |
 | Web UI configurable N2K device constants (product code, device function/class, manufacturer code) | Single-boat install with no conflicts; changing these requires understanding the N2K spec — exposing them in the UI risks misconfiguration |
+| Live temperature in 1-Wire config card description (#18) | Low priority UX polish; sensors can be identified by warming/cooling and checking SK diagnostics output |
+| Hot-reload 1-Wire sensor assignments without restart (#19) | Medium complexity; SensESP has a restart button in the navbar that serves as a workaround |
