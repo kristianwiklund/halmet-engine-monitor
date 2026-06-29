@@ -47,6 +47,7 @@ All trivial fixes, no functional impact on running firmware.
 - All 5 fixes implemented and committed.
 - **Build not verified** — PlatformIO not installed on this machine. Needs `pio run -e halmet` before flashing.
 
+<<<<<<< HEAD
 ## 2026-04-16 — Sprints 11–14
 
 ### Sprint 11 — Quick wins (multiple commits)
@@ -83,3 +84,14 @@ Code review after Sprint 13 found 7 items:
 - #49: Battery N2K send guard tightened to `if (st->adsOk && st->supplyVoltageV > 0.0f)`.
 - #50: Renamed `gVoltageMultiplier` → `voltageMultiplier` (local variable, `g` prefix was incorrect).
 - Build verified.
+=======
+## 2026-04-14 — Build verified in SensESP workspace
+
+Session: new-project import
+
+- Installed PlatformIO 6.1.19 via pip on this machine.
+- Created placeholder `src/secrets.h` (dummy SSID/password/SK IP) — gitignored, needs real values before flashing.
+- Build succeeds: 1.68 MB / 51% flash, 17% RAM. All libraries resolved correctly.
+- HALMET not connected to this machine — flash deferred until device is available.
+- **Next step**: Flash to device and run hardware testing (Phase 7).
+>>>>>>> e6a8a81 (chores: PIO update and secrets placeholder)
