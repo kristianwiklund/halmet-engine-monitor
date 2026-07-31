@@ -40,10 +40,10 @@ The board does **not** have a relay output on-board. A small relay module must b
 
 | Input | Signal | Mode | Notes |
 |---|---|---|---|
-| A1 | Spare | — | No longer used for coolant temperature. Coolant measurement moved to INA226 on I2C (see §3.2). |
+| A4 | Spare | — | No longer used for coolant temperature. Coolant measurement moved to INA226 on I2C (see §3.2). |
 | A2 | Resistive tank sender (10 mA CCS) | Active resistance | VDO 10–180 Ω default; Gobius 3-band mode via `-D TANK_SENSOR_GOBIUS` build flag. CCS jumper must be installed on A2 in default mode. See §3.3. |
 | A3 | Gobius sensor B OUT1 (Gobius mode only) | Passive voltage w/ pull-up | Only used when `-D TANK_SENSOR_GOBIUS` is set. See §3.3. |
-| A4 | Battery / supply voltage | Passive voltage | HALMET onboard 20 kΩ/2.2 kΩ voltage divider (10.09:1). Publishes PGN 127508 and SK `electrical.batteries.0.voltage`. Multiplier is runtime-configurable. See §3.4. |
+| A1 | Battery / supply voltage | Passive voltage | HALMET onboard 20 kΩ/2.2 kΩ voltage divider (10.09:1). Publishes PGN 127508 and SK `electrical.batteries.0.voltage`. Multiplier is runtime-configurable. See §3.4. |
 
 ### 2.3 1-Wire Bus (GPIO 4)
 
@@ -180,11 +180,11 @@ When the Gobius output sinks to GND: A2 reads 0 V → "threshold reached"
 
 **Note on BLE:** Although the ESP32 has BLE, the Gobius Pro uses a proprietary BLE profile. The wired outputs are simpler and more reliable — use them.
 
-### 3.4 Battery / Supply Voltage Sensing (A4)
+### 3.4 Battery / Supply Voltage Sensing (A1)
 
-A4 / ADS ch3 reads the supply voltage rail via the HALMET's onboard 20 kΩ/2.2 kΩ resistive divider, giving a scaling factor of (20 + 2.2) / 2.2 = **10.09:1**. This allows measuring up to ~33 V on a 12 V or 24 V boat.
+A1 / ADS ch1 reads the supply voltage rail via the HALMET's onboard 20 kΩ/2.2 kΩ resistive divider, giving a scaling factor of (20 + 2.2) / 2.2 = **10.09:1**. This allows measuring up to ~33 V on a 12 V or 24 V boat.
 
-Connect A4 to the ignition-switched +12 V supply (or directly to the battery positive terminal if always-on monitoring is preferred). No external resistors are needed — the HALMET's internal divider handles voltage scaling.
+Connect A1 to the N2K positive terminal. No external resistors are needed — the HALMET's internal divider handles voltage scaling.
 
 The firmware multiplier (`/voltage/multiplier`, default 10.09) is runtime-configurable to compensate for resistor tolerance. The Signal K output path (`/voltage/sk_path`, default `electrical.batteries.0.voltage`) is also runtime-configurable via the web UI. Published as:
 - PGN 127508 (Battery Status), battery instance 0
@@ -292,10 +292,10 @@ Coolant temperature is **not** part of this system — it is derived via the INA
 | 2 | D2 | 25 | Oil pressure warning | Digital alarm | Active-low, NPN switch |
 | 3 | D3 | 27 | Temperature warning | Digital alarm | Active-low, NPN switch |
 | 4 | D4 | 26 | Ignition key sense | Digital input | Optional, +12 V sense |
-| 5 | A1 | ADS1115 ch0 | Spare | — | No longer used. Coolant temp now via INA226 on I2C. |
+| 5 | A4 | ADS1115 ch1 | Spare | — | No longer used. Coolant temp now via INA226 on I2C. |
 | 6 | A2 | ADS1115 ch1 | Resistive tank sender (CCS) | Active resistance | Default mode; CCS jumper installed. VDO 10–180 Ω. Gobius OUT1 in Gobius mode (build flag). |
 | 7 | A3 | ADS1115 ch2 | Gobius sensor B OUT1 | Analog w/ pull-up | Gobius mode only (`-D TANK_SENSOR_GOBIUS`). Not used in default mode. |
-| 8 | A4 | ADS1115 ch3 | Battery / supply voltage | Analog passive | HALMET 20 kΩ/2.2 kΩ divider (10.09:1). 0–32 V range. PGN 127508 + SK. |
+| 8 | A1 | ADS1115 ch0 | Battery / supply voltage | Analog passive | HALMET 20 kΩ/2.2 kΩ divider (10.09:1). 0–32 V range. PGN 127508 + SK. |
 | 9 | I2C | GPIO 21 (SDA) / 22 (SCL) | INA226 (coolant sender) + ADS1115 (ADC) | I2C bus | INA226 at 0x40, ADS1115 at 0x4B. 400 kHz. |
 | 10 | 1-Wire | GPIO 4 | DS18B20 chain | 1-Wire bus | Multiple sensors; pull-up built into HALMET |
 | 11 | GPIO 32 | GPIO header | Bilge fan relay | Digital output | Via relay module |

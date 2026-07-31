@@ -130,7 +130,7 @@
 //  Battery voltage sensing (A4 / ADS ch3)
 //  HALMET analog input divider: 20 kΩ / 2.2 kΩ = 10.09:1
 // ----------------------------------------------------------
-#define VOLTAGE_CHANNEL             1
+#define VOLTAGE_CHANNEL             0
 #define DEFAULT_VOLTAGE_MULTIPLIER  10.09f  // (20k + 2.2k) / 2.2k
 #define INTERVAL_VOLTAGE_MS         1000
 
